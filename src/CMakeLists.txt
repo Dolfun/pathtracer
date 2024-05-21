@@ -1,3 +1,4 @@
+add_subdirectory(stb)
 add_subdirectory(renderer)
 
 add_executable(main main.cc)
