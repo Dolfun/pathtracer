@@ -9,9 +9,9 @@
 #define ENABLE_VALIDATION_LAYERS
 #endif
 
-class VulkanManager {
+class VkManager {
 public:
-  VulkanManager();
+  VkManager();
 
   const auto& get_physical_device() const noexcept { return *physical_device; }
   const auto& get_device() const noexcept { return *device; }

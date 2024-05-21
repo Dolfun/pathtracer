@@ -1,9 +1,12 @@
 set (
   sources
+  vk_manager.h
+  vk_manager.cc
+  render_config.h
+  render_job.h
+  render_job.cc
   renderer.h
   renderer.cc
-  vulkan_manager.h
-  vulkan_manager.cc
 )
 add_library(renderer ${sources})
 target_link_libraries(renderer PUBLIC fmt::fmt Vulkan::Vulkan)

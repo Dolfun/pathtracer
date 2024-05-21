@@ -1,15 +1,15 @@
-#include "vulkan_manager.h"
+#include "vk_manager.h"
 #include <fmt/core.h>
 #include <fmt/color.h>
 
-VulkanManager::VulkanManager() {
+VkManager::VkManager() {
   create_instance();
   select_physical_device();
   select_queue_family_indices();
   create_logical_device();
 }
 
-void VulkanManager::create_instance() {
+void VkManager::create_instance() {
   vk::ApplicationInfo application_info {
     .apiVersion = VK_API_VERSION_1_3
   };
@@ -49,7 +49,7 @@ void VulkanManager::create_instance() {
 #endif
 }
 
-void VulkanManager::select_physical_device() {
+void VkManager::select_physical_device() {
   vk::raii::PhysicalDevices physical_devices { *instance };
 
   for (const auto& device : physical_devices) {
@@ -62,7 +62,7 @@ void VulkanManager::select_physical_device() {
   physical_device = std::make_unique<vk::raii::PhysicalDevice>(physical_devices.front());
 }
 
-void VulkanManager::select_queue_family_indices() {
+void VkManager::select_queue_family_indices() {
   auto properties = physical_device->getQueueFamilyProperties();
   for (uint32_t i = 0; i < static_cast<uint32_t>(properties.size()); ++i) {
     if (properties[i].queueFlags & vk::QueueFlagBits::eCompute) {
@@ -79,7 +79,7 @@ void VulkanManager::select_queue_family_indices() {
   }
 }
 
-void VulkanManager::create_logical_device() {
+void VkManager::create_logical_device() {
   float queue_priority = 1.0f;
   vk::DeviceQueueCreateInfo queue_create_info {
     .queueFamilyIndex = compute_family_index.value(),
@@ -100,7 +100,7 @@ void VulkanManager::create_logical_device() {
 }
 
 #ifdef ENABLE_VALIDATION_LAYERS
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanManager::debug_callback(
+VKAPI_ATTR VkBool32 VKAPI_CALL VkManager::debug_callback(
   VkDebugUtilsMessageSeverityFlagBitsEXT severity,
   VkDebugUtilsMessageTypeFlagsEXT,
   const VkDebugUtilsMessengerCallbackDataEXT* data,
