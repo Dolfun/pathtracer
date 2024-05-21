@@ -6,5 +6,7 @@ RenderJob::RenderJob(const VkManager& _vk_manager, const RenderConfig& _config)
 }
 
 auto RenderJob::render() const -> std::vector<std::byte> {
-  return {};
+  std::vector<std::byte> result(config.image_width * config.image_height * NR_CHANNELS);
+
+  return result;
 }
