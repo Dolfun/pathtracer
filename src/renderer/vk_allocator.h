@@ -1,12 +1,9 @@
 #pragma once
-#include "vk_manager.h"
-#include <vector>
-#include <atomic>
-#include <memory>
-#include <unordered_map>
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <atomic>
+#include <unordered_map>
 
 template<typename T>
 concept ValidResource 
@@ -14,7 +11,7 @@ concept ValidResource
 
 class VkAllocator {
 public:
-  VkAllocator(const VkManager&);
+  VkAllocator(const vk::raii::Device&, const vk::PhysicalDeviceMemoryProperties&);
 
   template <ValidResource T>
   void add_resource(const T& resource, vk::MemoryPropertyFlags flags);

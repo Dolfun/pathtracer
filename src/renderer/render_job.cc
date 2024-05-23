@@ -1,10 +1,12 @@
 #include "render_job.h"
+#include "renderer.h"
 
-RenderJob::RenderJob(const VkManager& vk_manager, const RenderConfig& _config)
-  : device { vk_manager.get_device() }, vk_allocator { vk_manager }, config { _config } {
+RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config)
+  : renderer{ _renderer }, config { _config }, 
+    allocator { renderer.device, renderer.vk_manager.get_physical_device().getMemoryProperties() } {
   
   image_size = config.image_width * config.image_height * NR_CHANNELS;
-  vk_allocator.allocate_and_bind();
+  allocator.allocate_and_bind();
 }
 
 auto RenderJob::render() const -> std::vector<std::byte> {

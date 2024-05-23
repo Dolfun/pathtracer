@@ -1,9 +1,7 @@
 #include "vk_allocator.h"
 
-VkAllocator::VkAllocator(const VkManager& vk_manager)
-  : device { vk_manager.get_device() },
-  memory_properties { vk_manager.get_physical_device().getMemoryProperties() },
-  allocated { false } {}
+VkAllocator::VkAllocator(const vk::raii::Device& _device, const vk::PhysicalDeviceMemoryProperties& properties)
+  : device { _device }, memory_properties { properties }, allocated { false } {}
 
 void VkAllocator::allocate_and_bind() {
   if (allocated) {
