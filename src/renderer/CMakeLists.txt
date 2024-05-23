@@ -2,6 +2,8 @@ set (
   sources
   vk_manager.h
   vk_manager.cc
+  vk_allocator.h
+  vk_allocator.cc
   render_config.h
   render_job.h
   render_job.cc

@@ -1,7 +1,7 @@
 #pragma once
 #include "render_config.h"
 #include "vk_manager.h"
-#include <vector>
+#include "vk_allocator.h"
 #include <cstddef>
 
 class RenderJob {
@@ -11,6 +11,8 @@ public:
   auto render() const -> std::vector<std::byte>;
 
 private:
-  const VkManager& vk_manager;
+  const vk::raii::Device& device;
+  VkAllocator vk_allocator;
   RenderConfig config;
+  std::size_t image_size;
 };
