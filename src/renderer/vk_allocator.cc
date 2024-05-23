@@ -25,11 +25,15 @@ void VkAllocator::allocate_and_bind() {
       }
     };
 
-    set_memory_field(buffer_memory_regions);
-    device.bindBufferMemory2(buffer_memory_regions);
-
-    set_memory_field(image_memory_regions);
-    device.bindImageMemory2(image_memory_regions);
+    if (!buffer_memory_regions.empty()) {
+      set_memory_field(buffer_memory_regions);
+      device.bindBufferMemory2(buffer_memory_regions);
+    }
+    
+    if (!image_memory_regions.empty()) {
+      set_memory_field(image_memory_regions);
+      device.bindImageMemory2(image_memory_regions);
+    }
   }
 }
 

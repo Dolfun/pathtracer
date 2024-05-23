@@ -12,8 +12,8 @@ int main() {
     Renderer renderer;
 
     RenderConfig config {
-      .image_width = 16,
-      .image_height = 16
+      .image_width = 2,
+      .image_height = 2
     };
     auto image_data = renderer.render(config);
 

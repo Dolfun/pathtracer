@@ -16,6 +16,7 @@ public:
   const auto& get_physical_device() const noexcept { return *physical_device; }
   const auto& get_device() const noexcept { return *device; }
   const auto& get_compute_queue() const noexcept { return *compute_queue; }
+  uint32_t get_queue_family_index() const noexcept { return compute_family_index.value(); }
 
 private:
   void create_instance();
