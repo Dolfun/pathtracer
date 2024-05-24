@@ -8,7 +8,7 @@ class Renderer {
 public:
   Renderer();
 
-  auto render(const RenderConfig&) const -> std::vector<std::byte>;
+  auto render(const RenderConfig&) const -> std::pair<const float*, std::size_t>;
 
   friend class RenderJob;
 
@@ -26,5 +26,5 @@ private:
   std::unique_ptr<vk::raii::DescriptorSet> descriptor_set;
 
   std::unique_ptr<vk::raii::PipelineLayout> pipeline_layout;
-  std::unique_ptr<vk::raii::Pipeline> compute_pipeline;
+  std::unique_ptr<vk::raii::Pipeline> pipeline;
 };

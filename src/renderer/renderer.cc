@@ -82,22 +82,18 @@ void Renderer::create_compute_pipeline() {
     .setLayoutCount = 1,
     .pSetLayouts = &(**descriptor_set_layout)
   };
-  pipeline_layout = 
-    std::make_unique<vk::raii::PipelineLayout>(device, layout_create_info);
+  pipeline_layout = std::make_unique<vk::raii::PipelineLayout>(device, layout_create_info);
 
   // Pipeline
   vk::ComputePipelineCreateInfo create_info {
     .stage = shader_stage_create_info,
     .layout = *pipeline_layout
   };
-  compute_pipeline = 
-    std::make_unique<vk::raii::Pipeline>(device, nullptr, create_info);
+  pipeline = std::make_unique<vk::raii::Pipeline>(device, nullptr, create_info);
 }
 
-auto Renderer::render(const RenderConfig& config) const -> std::vector<std::byte> {
+auto Renderer::render(const RenderConfig& config) const -> std::pair<const float*, std::size_t> {
   RenderJob render_job { *this, config };
-
   auto result = render_job.render();
-
   return result;
 }
