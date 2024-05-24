@@ -118,9 +118,10 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
     .pCommandBuffers = &(**command_buffer),
   };
 
-  vk::raii::Fence fence { device, {} };
-  renderer.vk_manager.get_compute_queue().submit(submit_info, *fence);
-  while (device.waitForFences({ *fence }, true, UINT32_MAX) != vk::Result::eSuccess);
+  vk::FenceCreateInfo fence_create_info{};
+  vk::raii::Fence fence { device, fence_create_info };
+  renderer.vk_manager.get_compute_queue().submit(submit_info, fence);
+  while (device.waitForFences({ fence }, true, UINT32_MAX) != vk::Result::eSuccess);
 
   auto bind_info = allocator.get_bind_info(*result_staging_buffer).value();
   void* ptr = (*device).mapMemory(bind_info.memory, 0, buffer_size);
