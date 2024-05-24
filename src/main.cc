@@ -2,22 +2,23 @@
 #include <fmt/core.h>
 #include <stb_image_write.h>
 
-template <typename T>
-void save_image(int width, int height, const std::vector<T>& image) {
-  stbi_write_bmp("output.bmp", width, height, NR_CHANNELS, static_cast<const void*>(image.data()));
-}
-
 int main() {
   try {
     Renderer renderer;
 
     RenderConfig config {
-      .image_width = 2,
-      .image_height = 2
+      .image_width = 100,
+      .image_height = 100
     };
-    auto image_data = renderer.render(config);
+    auto [data, size] = renderer.render(config);
 
-    save_image(config.image_width, config.image_height, image_data);
+    std::vector<uint8_t> image(size);
+    for (auto i = 0z; i < size; ++i) {
+      image[i] = static_cast<uint8_t>(data[i] * 255.999f);
+    }
+    
+    stbi_write_bmp("output.bmp", config.image_width, config.image_height, NR_CHANNELS, image.data());
+
     
   } catch (const std::exception& e) {
     fmt::println("Exception Occured: {}", e.what());

@@ -5,11 +5,15 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config)
   : renderer { _renderer }, device { renderer.device }, config { _config }, 
     allocator { renderer.device, renderer.vk_manager.get_physical_device().getMemoryProperties() } {
   
-  buffer_size = config.image_width * config.image_height * NR_CHANNELS * sizeof(uint32_t);
+  result_pixel_count = config.image_width * config.image_height;
+  buffer_size = result_pixel_count * NR_CHANNELS * sizeof(float);
   create_result_buffers();
   allocator.allocate_and_bind();
   update_descriptor_sets();
   create_command_buffer();
+
+  command_buffer->reset();
+  record_command_buffer();
 }
 
 void RenderJob::create_result_buffers() {
@@ -27,7 +31,9 @@ void RenderJob::create_result_buffers() {
   result_staging_buffer = std::make_unique<vk::raii::Buffer>(device, result_staging_buffer_create_info);
   allocator.add_resource(
     *result_staging_buffer, 
-    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    vk::MemoryPropertyFlagBits::eHostVisible  |
+    vk::MemoryPropertyFlagBits::eHostCoherent |
+    vk::MemoryPropertyFlagBits::eHostCached
   );
 }
 
@@ -66,8 +72,57 @@ void RenderJob::create_command_buffer() {
   command_buffer = std::make_unique<vk::raii::CommandBuffer>(std::move(command_buffers.front()));
 }
 
-auto RenderJob::render() const -> std::vector<std::byte> {
-  std::vector<std::byte> result(buffer_size);
+void RenderJob::record_command_buffer() {
+  vk::CommandBufferBeginInfo begin_info {
+    .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+  };
+  command_buffer->begin(begin_info);
 
-  return result;
+  command_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, *renderer.pipeline);
+  command_buffer->bindDescriptorSets(
+    vk::PipelineBindPoint::eCompute, *renderer.pipeline_layout, 0, { *renderer.descriptor_set }, {}
+  );
+  command_buffer->dispatch(result_pixel_count, 1, 1);
+
+  vk::BufferMemoryBarrier2 buffer_memory_barrier {
+    .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+    .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+    .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+    .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
+    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+    .buffer = *result_buffer,
+    .offset = 0,
+    .size = buffer_size,
+  };
+  
+  vk::DependencyInfo dependency_info {
+    .bufferMemoryBarrierCount = 1,
+    .pBufferMemoryBarriers = &buffer_memory_barrier,
+  };
+  command_buffer->pipelineBarrier2(dependency_info);
+
+  vk::BufferCopy copy_region {
+    .srcOffset = 0,
+    .dstOffset = 0,
+    .size = buffer_size
+  };
+  command_buffer->copyBuffer(*result_buffer, *result_staging_buffer, { copy_region });
+
+  command_buffer->end();
+}
+
+auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
+  vk::SubmitInfo submit_info {
+    .commandBufferCount = 1,
+    .pCommandBuffers = &(**command_buffer),
+  };
+
+  vk::raii::Fence fence { device, {} };
+  renderer.vk_manager.get_compute_queue().submit(submit_info, *fence);
+  while (device.waitForFences({ *fence }, true, UINT32_MAX) != vk::Result::eSuccess);
+
+  auto bind_info = allocator.get_bind_info(*result_staging_buffer).value();
+  void* ptr = (*device).mapMemory(bind_info.memory, 0, buffer_size);
+  return std::make_pair(static_cast<const float*>(ptr), result_pixel_count * NR_CHANNELS);
 }

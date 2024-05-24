@@ -2,7 +2,6 @@
 #include "render_config.h"
 #include "vk_allocator.h"
 #include <cstddef>
-#include <vector>
 
 class Renderer;
 
@@ -10,18 +9,21 @@ class RenderJob {
 public:
   RenderJob(const Renderer&, const RenderConfig&);
 
-  auto render() const -> std::vector<std::byte>;
+  auto render() const -> std::pair<const float*, std::size_t>;
 
 private:
   void create_result_buffers();
   void update_descriptor_sets();
   void create_command_buffer();
 
+  void record_command_buffer();
+
   const Renderer& renderer;
   const vk::raii::Device& device;
   RenderConfig config;
   VkAllocator allocator;
 
+  std::size_t result_pixel_count;
   std::size_t buffer_size;
   std::unique_ptr<vk::raii::Buffer> result_buffer, result_staging_buffer;
 
