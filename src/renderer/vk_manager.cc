@@ -87,9 +87,14 @@ void VkManager::create_logical_device() {
     .pQueuePriorities = &queue_priority,
   };
 
+  vk::PhysicalDeviceSynchronization2Features sync2_features {
+    .synchronization2 = true,
+  };
+
   vk::DeviceCreateInfo device_create_info {
+    .pNext = &sync2_features,
     .queueCreateInfoCount = 1,
-    .pQueueCreateInfos = &queue_create_info
+    .pQueueCreateInfos = &queue_create_info,
   };
 
   device = std::make_unique<vk::raii::Device>(*physical_device, device_create_info);
