@@ -11,7 +11,7 @@ void VkAllocator::allocate_and_bind() {
   allocated = true;
 
   for (auto& [index, info] : memory_type_infos) {
-    auto& [memory, offset, buffer_memory_regions, image_memory_regions] = info;
+    auto& [memory, offset, buffer_memory_bind_infos, image_memory_bind_infos] = info;
 
     vk::MemoryAllocateInfo allocate_info {
       .allocationSize = static_cast<vk::DeviceSize>(offset),
@@ -19,21 +19,41 @@ void VkAllocator::allocate_and_bind() {
     };
     memory = std::make_unique<vk::raii::DeviceMemory>(device, allocate_info);
 
-    auto set_memory_field = [&memory] (auto& bind_infos) {
-      for (auto& bind_info : bind_infos) {
+    if (!buffer_memory_bind_infos.empty()) {
+      for (auto& bind_info : buffer_memory_bind_infos) {
         bind_info.memory = *memory;
+        buffer_memory_bind_info_map[bind_info.buffer] = bind_info;
       }
-    };
-
-    if (!buffer_memory_regions.empty()) {
-      set_memory_field(buffer_memory_regions);
-      device.bindBufferMemory2(buffer_memory_regions);
+      device.bindBufferMemory2(buffer_memory_bind_infos);
     }
     
-    if (!image_memory_regions.empty()) {
-      set_memory_field(image_memory_regions);
-      device.bindImageMemory2(image_memory_regions);
+    if (!image_memory_bind_infos.empty()) {
+      for (auto& bind_info : image_memory_bind_infos) {
+        bind_info.memory = *memory;
+        image_memory_bind_info_map[bind_info.image] = bind_info;
+      }
+      device.bindImageMemory2(image_memory_bind_infos);
     }
+  }
+}
+
+auto VkAllocator::get_bind_info(const vk::raii::Buffer& buffer) const 
+    -> std::optional<vk::BindBufferMemoryInfo> {
+  auto it = buffer_memory_bind_info_map.find(buffer);
+  if (it != buffer_memory_bind_info_map.end()) {
+    return it->second;
+  } else {
+    return std::nullopt;
+  }
+}
+
+auto VkAllocator::get_bind_info(const vk::raii::Image& image) const 
+    -> std::optional<vk::BindImageMemoryInfo> {
+  auto it = image_memory_bind_info_map.find(image);
+  if (it != image_memory_bind_info_map.end()) {
+    return it->second;
+  } else {
+    return std::nullopt;
   }
 }
 

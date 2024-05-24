@@ -1,6 +1,7 @@
 #pragma once
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_hash.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <atomic>
 #include <unordered_map>
@@ -16,27 +17,26 @@ public:
   template <ValidResource T>
   void add_resource(const T& resource, vk::MemoryPropertyFlags flags);
 
+  auto get_bind_info(const vk::raii::Buffer&) const -> std::optional<vk::BindBufferMemoryInfo>;
+  auto get_bind_info(const vk::raii::Image&) const -> std::optional<vk::BindImageMemoryInfo>;
+
   void allocate_and_bind();
 
 private:
   uint32_t get_memory_type_index(uint32_t, vk::MemoryPropertyFlags);
 
-  template <ValidResource T>
-  struct ResourceMemoryRegionInfo {
-    const T& resource;
-    std::size_t offset;
-  };
-
   struct MemoryTypeInfo {
     std::unique_ptr<vk::raii::DeviceMemory> memory;
     std::size_t memory_offset;
-    std::vector<vk::BindBufferMemoryInfo> buffer_memory_regions;
-    std::vector<vk::BindImageMemoryInfo> image_memory_regions;
+    std::vector<vk::BindBufferMemoryInfo> buffer_memory_bind_infos;
+    std::vector<vk::BindImageMemoryInfo> image_memory_bind_infos;
   };
 
   const vk::raii::Device& device;
   vk::PhysicalDeviceMemoryProperties memory_properties;
   std::unordered_map<uint32_t, MemoryTypeInfo> memory_type_infos;
+  std::unordered_map<vk::Buffer, vk::BindBufferMemoryInfo> buffer_memory_bind_info_map;
+  std::unordered_map<vk::Image, vk::BindImageMemoryInfo> image_memory_bind_info_map;
   std::atomic<bool> allocated;
 };
 
@@ -58,13 +58,13 @@ void VkAllocator::add_resource(const T& resource, vk::MemoryPropertyFlags flags)
       .buffer = resource,
       .memoryOffset = curr_offset
     };
-    memory_type_info.buffer_memory_regions.emplace_back(bind_info);
+    memory_type_info.buffer_memory_bind_infos.emplace_back(bind_info);
     
   } else {
     vk::BindImageMemoryInfo bind_info {
       .image = resource,
       .memoryOffset = curr_offset
     };
-    memory_type_info.image_memory_regions.emplace_back(bind_info);
+    memory_type_info.image_memory_bind_infos.emplace_back(bind_info);
   }
 }
