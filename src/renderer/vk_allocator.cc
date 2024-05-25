@@ -57,8 +57,8 @@ auto VkAllocator::get_bind_info(const vk::raii::Image& image) const
   }
 }
 
-uint32_t VkAllocator::get_memory_type_index(uint32_t type_filter, vk::MemoryPropertyFlags flags) {
-  for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
+std::uint32_t VkAllocator::get_memory_type_index(std::uint32_t type_filter, vk::MemoryPropertyFlags flags) {
+  for (auto i = 0u; i < memory_properties.memoryTypeCount; ++i) {
     if ((type_filter & (1 << i)) && 
         (memory_properties.memoryTypes[i].propertyFlags & flags) == flags) {
       return i;

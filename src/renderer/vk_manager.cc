@@ -29,9 +29,9 @@ void VkManager::create_instance() {
   vk::InstanceCreateInfo create_info {
     .pNext = &debug_messenger_create_info,
     .pApplicationInfo = &application_info,
-    .enabledLayerCount = static_cast<uint32_t>(layers.size()),
+    .enabledLayerCount = static_cast<std::uint32_t>(layers.size()),
     .ppEnabledLayerNames = layers.data(),
-    .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+    .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
     .ppEnabledExtensionNames = extensions.data()
   };
 
@@ -64,7 +64,7 @@ void VkManager::select_physical_device() {
 
 void VkManager::select_queue_family_indices() {
   auto properties = physical_device->getQueueFamilyProperties();
-  for (uint32_t i = 0; i < static_cast<uint32_t>(properties.size()); ++i) {
+  for (auto i = 0u; i < static_cast<std::uint32_t>(properties.size()); ++i) {
     if (properties[i].queueFlags & vk::QueueFlagBits::eCompute) {
       compute_family_index = i;
 

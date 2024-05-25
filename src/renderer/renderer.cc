@@ -3,6 +3,11 @@
 #include <fstream>
 
 Renderer::Renderer() : device { vk_manager.get_device() } {
+  specialization_constants = {
+    .local_size_x = 32,
+    .local_size_y = 32
+  };
+
   create_descriptors();
   create_compute_pipeline();
 }
@@ -32,7 +37,7 @@ void Renderer::create_descriptors() {
   };
 
   vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
-    .bindingCount = static_cast<uint32_t>(layout_bindings.size()),
+    .bindingCount = static_cast<std::uint32_t>(layout_bindings.size()),
     .pBindings = layout_bindings.data()
   };
   descriptor_set_layout = 
@@ -67,20 +72,49 @@ void Renderer::create_compute_pipeline() {
   auto compute_shader_code = read_binary_file("shaders/main.comp.spv");
   vk::ShaderModuleCreateInfo shader_module_create_info {
     .codeSize = compute_shader_code.size(),
-    .pCode = reinterpret_cast<const uint32_t*>(compute_shader_code.data())
+    .pCode = reinterpret_cast<const std::uint32_t*>(compute_shader_code.data())
   };
   vk::raii::ShaderModule shader_module { device, shader_module_create_info };
+
+  vk::SpecializationMapEntry specialization_map_entries[2];
+  specialization_map_entries[0] = vk::SpecializationMapEntry {
+    .constantID = 0,
+    .offset = offsetof(SpecializationConstants, local_size_x),
+    .size = sizeof(SpecializationConstants::local_size_x)
+  };
+  specialization_map_entries[1] = vk::SpecializationMapEntry {
+    .constantID = 1,
+    .offset = offsetof(SpecializationConstants, local_size_y),
+    .size = sizeof(SpecializationConstants::local_size_y)
+  };
+
+  vk::SpecializationInfo specialization_info {
+    .mapEntryCount = 2,
+    .pMapEntries = specialization_map_entries,
+    .dataSize = sizeof(specialization_constants),
+    .pData = &specialization_constants
+  };
 
   vk::PipelineShaderStageCreateInfo shader_stage_create_info {
     .stage = vk::ShaderStageFlagBits::eCompute,
     .module = shader_module,
-    .pName = "main"
+    .pName = "main",
+    .pSpecializationInfo = &specialization_info
+  };
+
+  // Push Constant
+  vk::PushConstantRange push_constant_range {
+    .stageFlags = vk::ShaderStageFlagBits::eCompute,
+    .offset = 0,
+    .size = sizeof(PushConstants)
   };
 
   // Pipeline layout
   vk::PipelineLayoutCreateInfo layout_create_info {
     .setLayoutCount = 1,
-    .pSetLayouts = &(**descriptor_set_layout)
+    .pSetLayouts = &(**descriptor_set_layout),
+    .pushConstantRangeCount = 1,
+    .pPushConstantRanges = &push_constant_range
   };
   pipeline_layout = std::make_unique<vk::raii::PipelineLayout>(device, layout_create_info);
 

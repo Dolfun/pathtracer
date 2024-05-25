@@ -12,8 +12,8 @@ int main() {
     });
 
     RenderConfig config {
-      .image_width = 3840,
-      .image_height = 2160
+      .image_width = 1920,
+      .image_height = 1080
     };
 
     const float* data;

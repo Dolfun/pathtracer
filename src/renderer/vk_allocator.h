@@ -23,7 +23,7 @@ public:
   void allocate_and_bind();
 
 private:
-  uint32_t get_memory_type_index(uint32_t, vk::MemoryPropertyFlags);
+  std::uint32_t get_memory_type_index(std::uint32_t, vk::MemoryPropertyFlags);
 
   struct MemoryTypeInfo {
     std::unique_ptr<vk::raii::DeviceMemory> memory;
@@ -34,7 +34,7 @@ private:
 
   const vk::raii::Device& device;
   vk::PhysicalDeviceMemoryProperties memory_properties;
-  std::unordered_map<uint32_t, MemoryTypeInfo> memory_type_infos;
+  std::unordered_map<std::uint32_t, MemoryTypeInfo> memory_type_infos;
   std::unordered_map<vk::Buffer, vk::BindBufferMemoryInfo> buffer_memory_bind_info_map;
   std::unordered_map<vk::Image, vk::BindImageMemoryInfo> image_memory_bind_info_map;
   std::atomic<bool> allocated;
@@ -43,7 +43,7 @@ private:
 template <ValidResource T>
 void VkAllocator::add_resource(const T& resource, vk::MemoryPropertyFlags flags) {
   auto requirements = resource.getMemoryRequirements();
-  uint32_t index = get_memory_type_index(requirements.memoryTypeBits, flags);
+  std::uint32_t index = get_memory_type_index(requirements.memoryTypeBits, flags);
   auto& memory_type_info = memory_type_infos[index];
 
   std::size_t curr_offset = memory_type_info.memory_offset;

@@ -16,7 +16,7 @@ public:
   const auto& get_physical_device() const noexcept { return *physical_device; }
   const auto& get_device() const noexcept { return *device; }
   const auto& get_compute_queue() const noexcept { return *compute_queue; }
-  uint32_t get_queue_family_index() const noexcept { return compute_family_index.value(); }
+  std::uint32_t get_queue_family_index() const noexcept { return compute_family_index.value(); }
 
 private:
   void create_instance();
@@ -27,7 +27,7 @@ private:
   vk::raii::Context context;
   std::unique_ptr<vk::raii::Instance> instance;
   std::unique_ptr<vk::raii::PhysicalDevice> physical_device;
-  std::optional<uint32_t> compute_family_index;
+  std::optional<std::uint32_t> compute_family_index;
   std::unique_ptr<vk::raii::Device> device;
   std::unique_ptr<vk::raii::Queue> compute_queue;
 

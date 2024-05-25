@@ -82,7 +82,19 @@ void RenderJob::record_command_buffer() {
   command_buffer->bindDescriptorSets(
     vk::PipelineBindPoint::eCompute, *renderer.pipeline_layout, 0, { *renderer.descriptor_set }, {}
   );
-  command_buffer->dispatch(result_pixel_count, 1, 1);
+
+  Renderer::PushConstants push_constants {
+    .image_width = config.image_width,
+    .image_height = config.image_height
+  };
+  command_buffer->pushConstants<Renderer::PushConstants>(
+    *renderer.pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
+  );
+
+  auto [local_size_x, local_size_y] = renderer.specialization_constants;
+  std::uint32_t global_size_x = (config.image_width  + local_size_x - 1) / local_size_x;
+  std::uint32_t global_size_y = (config.image_height + local_size_y - 1) / local_size_y;
+  command_buffer->dispatch(global_size_x, global_size_y, 1);
 
   vk::BufferMemoryBarrier2 buffer_memory_barrier {
     .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,

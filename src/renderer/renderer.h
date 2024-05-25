@@ -27,4 +27,13 @@ private:
 
   std::unique_ptr<vk::raii::PipelineLayout> pipeline_layout;
   std::unique_ptr<vk::raii::Pipeline> pipeline;
+
+  struct PushConstants {
+    std::uint32_t image_width, image_height;
+  } push_constants;
+
+  struct SpecializationConstants {
+    std::uint32_t local_size_x;
+    std::uint32_t local_size_y;
+  } specialization_constants;
 };
