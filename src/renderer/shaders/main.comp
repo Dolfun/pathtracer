@@ -15,7 +15,7 @@ void main() {
   uint index_y = gl_GlobalInvocationID.y;
   if (index_x >= info.image_height || index_y >= info.image_width) return;
 
-  vec3 color = vec3(float(index_x) / float(info.image_height), float(index_y) / float(info.image_width), 0.0f);
+  vec3 color = vec3(float(index_x) / float(info.image_height), float(index_y) / float(info.image_width), 1.0f);
 
   uint index = index_x * info.image_width + index_y;
   result[index] = vec4(color, 1.0f);

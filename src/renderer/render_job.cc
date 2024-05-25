@@ -92,8 +92,8 @@ void RenderJob::record_command_buffer() {
   );
 
   auto [local_size_x, local_size_y] = renderer.specialization_constants;
-  std::uint32_t global_size_x = (config.image_width  + local_size_x - 1) / local_size_x;
-  std::uint32_t global_size_y = (config.image_height + local_size_y - 1) / local_size_y;
+  std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;
+  std::uint32_t global_size_y = (config.image_width  + local_size_y - 1) / local_size_y;
   command_buffer->dispatch(global_size_x, global_size_y, 1);
 
   vk::BufferMemoryBarrier2 buffer_memory_barrier {
