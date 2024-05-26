@@ -13,9 +13,9 @@ public:
 
 private:
   void create_result_buffers();
-  void update_descriptor_sets();
   void create_command_buffer();
-
+  
+  void update_descriptor_sets();
   void record_command_buffer();
 
   const Renderer& renderer;
@@ -25,7 +25,7 @@ private:
 
   std::size_t result_pixel_count;
   std::size_t buffer_size;
-  std::unique_ptr<vk::raii::Buffer> result_buffer, result_staging_buffer;
+  std::unique_ptr<vk::raii::Buffer> result_buffer, result_unstaging_buffer;
 
   std::unique_ptr<vk::raii::CommandPool> command_pool;
   std::unique_ptr<vk::raii::CommandBuffer> command_buffer;

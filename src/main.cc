@@ -7,7 +7,7 @@ int main() {
   try {
     std::unique_ptr<Renderer> renderer;
 
-    timeit("Renderer()", [&] { 
+    timeit("Initialization", [&] { 
       renderer = std::make_unique<Renderer>(); 
     });
 
@@ -18,7 +18,7 @@ int main() {
 
     const float* data;
     std::size_t size;
-    timeit("Renderer::render()", [&] { 
+    timeit("Rendering", [&] { 
       std::tie(data, size) = renderer->render(config);
     });
 

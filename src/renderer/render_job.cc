@@ -1,5 +1,6 @@
 #include "render_job.h"
 #include "renderer.h"
+#include <fmt/core.h>
 
 RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config)
   : renderer { _renderer }, device { renderer.device }, config { _config }, 
@@ -8,9 +9,10 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config)
   result_pixel_count = config.image_width * config.image_height;
   buffer_size = result_pixel_count * NR_CHANNELS * sizeof(float);
   create_result_buffers();
+  create_command_buffer();
+
   allocator.allocate_and_bind();
   update_descriptor_sets();
-  create_command_buffer();
 
   command_buffer->reset();
   record_command_buffer();
@@ -28,13 +30,29 @@ void RenderJob::create_result_buffers() {
     .size = buffer_size,
     .usage = vk::BufferUsageFlagBits::eTransferDst
   };
-  result_staging_buffer = std::make_unique<vk::raii::Buffer>(device, result_staging_buffer_create_info);
+  result_unstaging_buffer = std::make_unique<vk::raii::Buffer>(device, result_staging_buffer_create_info);
   allocator.add_resource(
-    *result_staging_buffer, 
+    *result_unstaging_buffer, 
     vk::MemoryPropertyFlagBits::eHostVisible  |
     vk::MemoryPropertyFlagBits::eHostCoherent |
     vk::MemoryPropertyFlagBits::eHostCached
   );
+}
+
+void RenderJob::create_command_buffer() {
+  vk::CommandPoolCreateInfo pool_create_info {
+    .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+    .queueFamilyIndex = renderer.vk_manager.get_queue_family_index()
+  };
+  command_pool = std::make_unique<vk::raii::CommandPool>(device, pool_create_info);
+
+  vk::CommandBufferAllocateInfo allocate_info {
+    .commandPool = *command_pool,
+    .level = vk::CommandBufferLevel::ePrimary,
+    .commandBufferCount = 1
+  };
+  vk::raii::CommandBuffers command_buffers { device, allocate_info };
+  command_buffer = std::make_unique<vk::raii::CommandBuffer>(std::move(command_buffers.front()));
 }
 
 void RenderJob::update_descriptor_sets() {
@@ -56,22 +74,6 @@ void RenderJob::update_descriptor_sets() {
   device.updateDescriptorSets({ descriptor_write }, {});
 }
 
-void RenderJob::create_command_buffer() {
-  vk::CommandPoolCreateInfo pool_create_info {
-    .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-    .queueFamilyIndex = renderer.vk_manager.get_queue_family_index()
-  };
-  command_pool = std::make_unique<vk::raii::CommandPool>(device, pool_create_info);
-
-  vk::CommandBufferAllocateInfo allocate_info {
-    .commandPool = *command_pool,
-    .level = vk::CommandBufferLevel::ePrimary,
-    .commandBufferCount = 1
-  };
-  vk::raii::CommandBuffers command_buffers { device, allocate_info };
-  command_buffer = std::make_unique<vk::raii::CommandBuffer>(std::move(command_buffers.front()));
-}
-
 void RenderJob::record_command_buffer() {
   vk::CommandBufferBeginInfo begin_info {
     .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -90,6 +92,7 @@ void RenderJob::record_command_buffer() {
   command_buffer->pushConstants<Renderer::PushConstants>(
     *renderer.pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
+
 
   auto [local_size_x, local_size_y] = renderer.specialization_constants;
   std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;
@@ -119,8 +122,7 @@ void RenderJob::record_command_buffer() {
     .dstOffset = 0,
     .size = buffer_size
   };
-  command_buffer->copyBuffer(*result_buffer, *result_staging_buffer, { copy_region });
-
+  command_buffer->copyBuffer(*result_buffer, *result_unstaging_buffer, { copy_region });
   command_buffer->end();
 }
 
@@ -133,9 +135,9 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   vk::FenceCreateInfo fence_create_info{};
   vk::raii::Fence fence { device, fence_create_info };
   renderer.vk_manager.get_compute_queue().submit(submit_info, fence);
-  while (device.waitForFences({ fence }, true, UINT32_MAX) != vk::Result::eSuccess);
+    while (device.waitForFences({ fence }, true, UINT32_MAX) != vk::Result::eSuccess);
 
-  auto bind_info = allocator.get_bind_info(*result_staging_buffer).value();
+  auto bind_info = allocator.get_bind_info(*result_unstaging_buffer).value();
   void* ptr = (*device).mapMemory(bind_info.memory, 0, buffer_size);
   return std::make_pair(static_cast<const float*>(ptr), result_pixel_count * NR_CHANNELS);
 }
