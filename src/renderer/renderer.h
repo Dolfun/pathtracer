@@ -30,6 +30,7 @@ private:
 
   struct PushConstants {
     std::uint32_t image_width, image_height;
+    std::uint32_t seed;
   } push_constants;
 
   struct SpecializationConstants {

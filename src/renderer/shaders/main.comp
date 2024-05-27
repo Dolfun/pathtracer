@@ -8,15 +8,35 @@ layout (set = 0, binding = 0) buffer result_ssbo {
 
 layout (push_constant) uniform constant {
   uint image_width, image_height;
+  uint seed;
 } info;
+
+// https://nullprogram.com/blog/2018/07/31/
+uint triple32(uint x) {
+  x ^= x >> 17;
+  x *= 0xed5ad4bbU;
+  x ^= x >> 11;
+  x *= 0xac4c1b51U;
+  x ^= x >> 15;
+  x *= 0x31848babU;
+  x ^= x >> 14;
+  return x;
+}
+
+uint rand_state;
+float rand_float() {
+  rand_state = triple32(rand_state);
+  return float(rand_state) / float(~0u);
+}
 
 void main() {
   uint index_x = gl_GlobalInvocationID.x;
   uint index_y = gl_GlobalInvocationID.y;
   if (index_x >= info.image_height || index_y >= info.image_width) return;
-
-  vec3 color = vec3(float(index_x) / float(info.image_height), float(index_y) / float(info.image_width), 1.0f);
-
   uint index = index_x * info.image_width + index_y;
+  rand_state = index ^ info.seed;
+
+  vec3 color = vec3(rand_float());
+
   result[index] = vec4(color, 1.0f);
 }
