@@ -1,7 +1,6 @@
 #include "render_job.h"
 #include "renderer.h"
 #include <fmt/core.h>
-#include <random>
 
 RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config)
   : renderer { _renderer }, device { renderer.device }, config { _config }, 
@@ -86,18 +85,10 @@ void RenderJob::record_command_buffer() {
     vk::PipelineBindPoint::eCompute, *renderer.pipeline_layout, 0, { *renderer.descriptor_set }, {}
   );
 
-  static std::random_device rd;
-  static std::mt19937 engine { rd() };
-  static std::uniform_int_distribution<std::uint32_t> dist;
-  Renderer::PushConstants push_constants {
-    .image_width = config.image_width,
-    .image_height = config.image_height,
-    .seed = dist(engine)
-  };
+  Renderer::PushConstants push_constants { config };
   command_buffer->pushConstants<Renderer::PushConstants>(
     *renderer.pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
-
 
   auto [local_size_x, local_size_y] = renderer.specialization_constants;
   std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;

@@ -6,9 +6,17 @@ layout (set = 0, binding = 0) buffer result_ssbo {
   vec4 result[];
 };
 
+struct Camera {
+  vec3 center;
+  vec3 pixel_delta_u, pixel_delta_v;
+  vec3 corner_pixel_pos;
+};
+
 layout (push_constant) uniform constant {
+  Camera camera;
   uint image_width, image_height;
   uint seed;
+  uint nr_samples;
 } info;
 
 // https://nullprogram.com/blog/2018/07/31/
@@ -29,14 +37,43 @@ float rand_float() {
   return float(rand_state) / float(~0u);
 }
 
+struct Ray {
+  vec3 origin;
+  vec3 dir;
+};
+
+Ray get_ray_through_pixel(uint x, uint y) {
+  vec3 pixel_center = 
+    info.camera.corner_pixel_pos + 
+    (rand_float() - 0.5 + x) * info.camera.pixel_delta_u +
+    (rand_float() - 0.5 + y) * info.camera.pixel_delta_v;
+
+  Ray ray;
+  ray.origin = info.camera.center;
+  ray.dir = normalize(pixel_center - ray.origin);
+  return ray;
+}
+
+vec3 get_ray_color(Ray ray) {
+  float a = 0.5 * (ray.dir.y + 1.0);
+  vec3 color = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), a);
+  return color;
+}
+
 void main() {
-  uint index_x = gl_GlobalInvocationID.x;
-  uint index_y = gl_GlobalInvocationID.y;
-  if (index_x >= info.image_height || index_y >= info.image_width) return;
-  uint index = index_x * info.image_width + index_y;
+  uint id_x = gl_GlobalInvocationID.y;
+  uint id_y = gl_GlobalInvocationID.x;
+  if (id_x >= info.image_width || id_y >= info.image_height) return;
+
+  uint index = id_y * info.image_width + id_x;
   rand_state = index ^ info.seed;
 
-  vec3 color = vec3(rand_float());
+  vec3 color = vec3(0.0);
+  for (uint i = 0; i < info.nr_samples; ++i) {
+    Ray ray = get_ray_through_pixel(id_x, id_y);
+    color += get_ray_color(ray);
+  }
+  color /= info.nr_samples;
 
   result[index] = vec4(color, 1.0f);
 }

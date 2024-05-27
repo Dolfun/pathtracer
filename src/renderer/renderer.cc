@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "render_job.h"
 #include <fstream>
+#include <glm/glm.hpp>
 
 Renderer::Renderer() : device { vk_manager.get_device() } {
   specialization_constants = {
@@ -130,4 +131,36 @@ auto Renderer::render(const RenderConfig& config) const -> std::pair<const float
   RenderJob render_job { *this, config };
   auto result = render_job.render();
   return result;
+}
+
+Renderer::PushConstants::PushConstants(const RenderConfig& config) :
+  image_width { config.image_width }, image_height { config.image_height },
+  seed { config.seed }, nr_samples { config.nr_samples } {
+
+  float width = config.image_width;
+  float height = config.image_height;
+  const auto& camera = config.camera;
+
+  glm::vec3 w = glm::normalize(camera.center - camera.lookat);
+  glm::vec3 u = glm::normalize(glm::cross(camera.up, w));
+  glm::vec3 v = glm::cross(w, u);
+
+  float focal_length = glm::length(camera.center - camera.lookat);
+  float theta = glm::radians(camera.vertical_fov);
+  float viewport_height = 2.0f * glm::tan(theta / 2.0f) * focal_length;
+  float viewport_width = viewport_height * width / height;
+
+  glm::vec3 viewport_u = viewport_width * u;
+  glm::vec3 viewport_v = viewport_height * -v;
+  glm::vec3 pixel_delta_u = viewport_u / width;
+  glm::vec3 pixel_delta_v = viewport_v / height;
+  glm::vec3 viewport_upper_left = camera.center - focal_length * w - 0.5f * (viewport_u + viewport_v);
+  glm::vec3 corner_pixel_pos = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
+
+  this->camera = {
+    .center = camera.center,
+    .pixel_delta_u = pixel_delta_u,
+    .pixel_delta_v = pixel_delta_v,
+    .corner_pixel_pos = corner_pixel_pos
+  };
 }

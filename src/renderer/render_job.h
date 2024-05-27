@@ -14,7 +14,6 @@ public:
 private:
   void create_result_buffers();
   void create_command_buffer();
-  
   void update_descriptor_sets();
   void record_command_buffer();
 

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include "vk_manager.h"
 #include "render_config.h"
+#include <glm/vec3.hpp>
 
 class Renderer {
 public:
@@ -29,9 +30,19 @@ private:
   std::unique_ptr<vk::raii::Pipeline> pipeline;
 
   struct PushConstants {
+    PushConstants(const RenderConfig&);
+
+    struct Camera {
+      glm::vec3 center;
+      alignas(16) glm::vec3 pixel_delta_u;
+      alignas(16) glm::vec3 pixel_delta_v;
+      alignas(16) glm::vec3 corner_pixel_pos;
+    } camera;
+
     std::uint32_t image_width, image_height;
     std::uint32_t seed;
-  } push_constants;
+    std::uint32_t nr_samples;
+  };
 
   struct SpecializationConstants {
     std::uint32_t local_size_x;
