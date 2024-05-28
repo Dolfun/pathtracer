@@ -1,4 +1,6 @@
 #include <random>
+#include <algorithm>
+#include <execution>
 #include <fmt/core.h>
 #include <stb_image_write.h>
 #include "renderer.h"
@@ -17,8 +19,8 @@ int main() {
     std::uniform_int_distribution<std::uint32_t> dist;
 
     RenderConfig config {
-      .image_width = 1920,
-      .image_height = 1080,
+      .image_width = 3840,
+      .image_height = 2160,
       .seed = dist(engine),
       .nr_samples = 100,
       .camera {
@@ -36,13 +38,11 @@ int main() {
     });
 
     std::vector<uint8_t> image(size);
-    timeit("Image format conversion", [&] { 
-      for (std::size_t i = 0; i < size; ++i) {
-        image[i] = static_cast<uint8_t>(data[i] * 255.999f);
-      }
+    std::transform(std::execution::par, data, data + size, image.begin(), [] (const float x) {
+      return static_cast<std::uint8_t>(x * 255.999f);
     });
     
-    timeit("Image saving", [&] { 
+    timeit("Saving", [&] { 
       stbi_write_bmp("output.bmp", config.image_width, config.image_height, NR_CHANNELS, image.data());
     });
 

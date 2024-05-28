@@ -137,8 +137,8 @@ Renderer::PushConstants::PushConstants(const RenderConfig& config) :
   image_width { config.image_width }, image_height { config.image_height },
   seed { config.seed }, nr_samples { config.nr_samples } {
 
-  float width = config.image_width;
-  float height = config.image_height;
+  float image_width = static_cast<float>(config.image_width);
+  float image_height = static_cast<float>(config.image_height);
   const auto& camera = config.camera;
 
   glm::vec3 w = glm::normalize(camera.center - camera.lookat);
@@ -148,12 +148,12 @@ Renderer::PushConstants::PushConstants(const RenderConfig& config) :
   float focal_length = glm::length(camera.center - camera.lookat);
   float theta = glm::radians(camera.vertical_fov);
   float viewport_height = 2.0f * glm::tan(theta / 2.0f) * focal_length;
-  float viewport_width = viewport_height * width / height;
+  float viewport_width = viewport_height * image_width / image_height;
 
   glm::vec3 viewport_u = viewport_width * u;
   glm::vec3 viewport_v = viewport_height * -v;
-  glm::vec3 pixel_delta_u = viewport_u / width;
-  glm::vec3 pixel_delta_v = viewport_v / height;
+  glm::vec3 pixel_delta_u = viewport_u / image_width;
+  glm::vec3 pixel_delta_v = viewport_v / image_height;
   glm::vec3 viewport_upper_left = camera.center - focal_length * w - 0.5f * (viewport_u + viewport_v);
   glm::vec3 corner_pixel_pos = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
 
