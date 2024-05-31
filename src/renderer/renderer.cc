@@ -1,166 +1,149 @@
 #include "renderer.h"
 #include "render_job.h"
-#include <fstream>
-#include <glm/glm.hpp>
+#include <fmt/core.h>
+#include <fmt/color.h>
 
-Renderer::Renderer() : device { vk_manager.get_device() } {
-  specialization_constants = {
-    .local_size_x = 32,
-    .local_size_y = 32
-  };
-
-  create_descriptors();
-  create_compute_pipeline();
+Renderer::Renderer() {
+  create_instance();
+  select_physical_device();
+  select_queue_family_indices();
+  create_logical_device();
 }
 
-auto Renderer::read_binary_file(const std::string& path) -> std::vector<std::byte> {
-  std::ifstream file { path, std::ios::ate | std::ios::binary };
-  if (!file.is_open()) {
-    throw std::runtime_error("Failed to open file: " + path);
+void Renderer::create_instance() {
+  vk::ApplicationInfo application_info {
+    .apiVersion = VK_API_VERSION_1_3
+  };
+
+#ifdef ENABLE_VALIDATION_LAYERS
+  using enum vk::DebugUtilsMessageSeverityFlagBitsEXT;
+  using enum vk::DebugUtilsMessageTypeFlagBitsEXT;
+  vk::DebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = {
+    .messageSeverity = eWarning | eError,
+    .messageType = eGeneral | eValidation | ePerformance,
+    .pfnUserCallback = debug_callback,
+  };
+
+  std::array layers = { "VK_LAYER_KHRONOS_validation" };
+  std::array extensions = { VK_EXT_DEBUG_UTILS_EXTENSION_NAME };
+
+  vk::InstanceCreateInfo create_info {
+    .pNext = &debug_messenger_create_info,
+    .pApplicationInfo = &application_info,
+    .enabledLayerCount = static_cast<std::uint32_t>(layers.size()),
+    .ppEnabledLayerNames = layers.data(),
+    .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
+    .ppEnabledExtensionNames = extensions.data()
+  };
+
+  instance = std::make_unique<vk::raii::Instance>(context, create_info);
+  debug_messenger = std::make_unique<vk::raii::DebugUtilsMessengerEXT>(
+    *instance, debug_messenger_create_info
+  );
+
+#else
+  vk::InstanceCreateInfo create_info {
+    .pApplicationInfo = &application_info,
+  };
+
+  instance = std::make_unique<vk::raii::Instance>(context, create_info);
+#endif
+}
+
+void Renderer::select_physical_device() {
+  vk::raii::PhysicalDevices physical_devices { *instance };
+
+  for (const auto& device : physical_devices) {
+    if (device.getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+      physical_device = std::make_unique<vk::raii::PhysicalDevice>(device);
+      return;
+    }
   }
 
-  auto size = static_cast<size_t>(file.tellg());
-  std::vector<std::byte> buffer(size);
-  file.seekg(0);
-  file.read(reinterpret_cast<char*>(buffer.data()), size);
+  physical_device = std::make_unique<vk::raii::PhysicalDevice>(physical_devices.front());
+}
+
+void Renderer::select_queue_family_indices() {
+  auto properties = physical_device->getQueueFamilyProperties();
+  for (auto i = 0u; i < static_cast<std::uint32_t>(properties.size()); ++i) {
+    if (properties[i].queueFlags & vk::QueueFlagBits::eCompute) {
+      compute_family_index = i;
+
+      if (!(properties[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
+        break;
+      }
+    }
+  }
+
+  if (!compute_family_index.has_value()) {
+    throw std::runtime_error("Failed to find a compute queue.");
+  }
+}
+
+void Renderer::create_logical_device() {
+  float queue_priority = 1.0f;
+  vk::DeviceQueueCreateInfo queue_create_info {
+    .queueFamilyIndex = compute_family_index.value(),
+    .queueCount = 1,
+    .pQueuePriorities = &queue_priority,
+  };
+
+  vk::PhysicalDeviceSynchronization2Features sync2_features {
+    .synchronization2 = true,
+  };
+
+  vk::DeviceCreateInfo device_create_info {
+    .pNext = &sync2_features,
+    .queueCreateInfoCount = 1,
+    .pQueueCreateInfos = &queue_create_info,
+  };
+
+  device = std::make_unique<vk::raii::Device>(*physical_device, device_create_info);
   
-  return buffer;
+  compute_queue = std::make_unique<vk::raii::Queue>(
+    device->getQueue(compute_family_index.value(), 0)
+  );
 }
 
-void Renderer::create_descriptors() {
-  // Descriptor set layout
-  std::array<vk::DescriptorSetLayoutBinding, 1> layout_bindings{};
-  layout_bindings[0] = {
-    .binding = 0,
-    .descriptorType = vk::DescriptorType::eStorageBuffer,
-    .descriptorCount = 1,
-    .stageFlags = vk::ShaderStageFlagBits::eCompute
-  };
+#ifdef ENABLE_VALIDATION_LAYERS
+VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debug_callback(
+  VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+  VkDebugUtilsMessageTypeFlagsEXT,
+  const VkDebugUtilsMessengerCallbackDataEXT* data,
+  void*) {
 
-  vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
-    .bindingCount = static_cast<std::uint32_t>(layout_bindings.size()),
-    .pBindings = layout_bindings.data()
-  };
-  descriptor_set_layout = 
-    std::make_unique<vk::raii::DescriptorSetLayout>(device, descriptor_set_layout_create_info);
+  fmt::color color { fmt::color::white };
+  switch (severity) {
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+      color = fmt::color::white;
+      break;
 
-  // Descriptor pool
-  vk::DescriptorPoolSize pool_size {
-    .type = vk::DescriptorType::eStorageBuffer,
-    .descriptorCount = 1
-  };
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+      color = fmt::color::green;
+      break;
 
-  vk::DescriptorPoolCreateInfo pool_create_info {
-    .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-    .maxSets = 1,
-    .poolSizeCount = 1,
-    .pPoolSizes = &pool_size
-  };
-  descriptor_pool = std::make_unique<vk::raii::DescriptorPool>(device, pool_create_info);
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+      color = fmt::color::yellow;
+      break;
 
-  // Descriptor set
-  vk::DescriptorSetAllocateInfo allocate_info {
-    .descriptorPool = *descriptor_pool,
-    .descriptorSetCount = 1,
-    .pSetLayouts = &(**descriptor_set_layout)
-  };
-  vk::raii::DescriptorSets descriptor_sets { device, allocate_info };
-  descriptor_set = std::make_unique<vk::raii::DescriptorSet>(std::move(descriptor_sets.front()));
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+      color = fmt::color::red;
+      break;
+
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_FLAG_BITS_MAX_ENUM_EXT:
+      color = fmt::color::dark_red;
+      break;
+  }
+
+  std::string error = fmt::format("[[{}]] {}\n", data->pMessageIdName, data->pMessage);
+  fmt::print(fmt::fg(color), "{}", error);
+
+  return VK_FALSE;
 }
-
-void Renderer::create_compute_pipeline() {
-  // Shader Stage
-  auto compute_shader_code = read_binary_file("shaders/main.comp.spv");
-  vk::ShaderModuleCreateInfo shader_module_create_info {
-    .codeSize = compute_shader_code.size(),
-    .pCode = reinterpret_cast<const std::uint32_t*>(compute_shader_code.data())
-  };
-  vk::raii::ShaderModule shader_module { device, shader_module_create_info };
-
-  vk::SpecializationMapEntry specialization_map_entries[2];
-  specialization_map_entries[0] = vk::SpecializationMapEntry {
-    .constantID = 0,
-    .offset = offsetof(SpecializationConstants, local_size_x),
-    .size = sizeof(SpecializationConstants::local_size_x)
-  };
-  specialization_map_entries[1] = vk::SpecializationMapEntry {
-    .constantID = 1,
-    .offset = offsetof(SpecializationConstants, local_size_y),
-    .size = sizeof(SpecializationConstants::local_size_y)
-  };
-
-  vk::SpecializationInfo specialization_info {
-    .mapEntryCount = 2,
-    .pMapEntries = specialization_map_entries,
-    .dataSize = sizeof(specialization_constants),
-    .pData = &specialization_constants
-  };
-
-  vk::PipelineShaderStageCreateInfo shader_stage_create_info {
-    .stage = vk::ShaderStageFlagBits::eCompute,
-    .module = shader_module,
-    .pName = "main",
-    .pSpecializationInfo = &specialization_info
-  };
-
-  // Push Constant
-  vk::PushConstantRange push_constant_range {
-    .stageFlags = vk::ShaderStageFlagBits::eCompute,
-    .offset = 0,
-    .size = sizeof(PushConstants)
-  };
-
-  // Pipeline layout
-  vk::PipelineLayoutCreateInfo layout_create_info {
-    .setLayoutCount = 1,
-    .pSetLayouts = &(**descriptor_set_layout),
-    .pushConstantRangeCount = 1,
-    .pPushConstantRanges = &push_constant_range
-  };
-  pipeline_layout = std::make_unique<vk::raii::PipelineLayout>(device, layout_create_info);
-
-  // Pipeline
-  vk::ComputePipelineCreateInfo create_info {
-    .stage = shader_stage_create_info,
-    .layout = *pipeline_layout
-  };
-  pipeline = std::make_unique<vk::raii::Pipeline>(device, nullptr, create_info);
-}
+#endif
 
 auto Renderer::render(const RenderConfig& config) const -> std::pair<const float*, std::size_t> {
   RenderJob render_job { *this, config };
   auto result = render_job.render();
   return result;
-}
-
-Renderer::PushConstants::PushConstants(const RenderConfig& config) :
-  image_width { config.image_width }, image_height { config.image_height },
-  seed { config.seed }, nr_samples { config.nr_samples } {
-
-  float image_width = static_cast<float>(config.image_width);
-  float image_height = static_cast<float>(config.image_height);
-  const auto& camera = config.camera;
-
-  glm::vec3 w = glm::normalize(camera.center - camera.lookat);
-  glm::vec3 u = glm::normalize(glm::cross(camera.up, w));
-  glm::vec3 v = glm::cross(w, u);
-
-  float focal_length = glm::length(camera.center - camera.lookat);
-  float theta = glm::radians(camera.vertical_fov);
-  float viewport_height = 2.0f * glm::tan(theta / 2.0f) * focal_length;
-  float viewport_width = viewport_height * image_width / image_height;
-
-  glm::vec3 viewport_u = viewport_width * u;
-  glm::vec3 viewport_v = viewport_height * -v;
-  glm::vec3 pixel_delta_u = viewport_u / image_width;
-  glm::vec3 pixel_delta_v = viewport_v / image_height;
-  glm::vec3 viewport_upper_left = camera.center - focal_length * w - 0.5f * (viewport_u + viewport_v);
-  glm::vec3 corner_pixel_pos = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
-
-  this->camera = {
-    .center = camera.center,
-    .pixel_delta_u = pixel_delta_u,
-    .pixel_delta_v = pixel_delta_v,
-    .corner_pixel_pos = corner_pixel_pos
-  };
 }

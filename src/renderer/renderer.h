@@ -1,9 +1,30 @@
 #pragma once
-#include <vector>
-#include <cstddef>
-#include "vk_manager.h"
-#include "render_config.h"
+#include <memory>
+#include <optional>
 #include <glm/vec3.hpp>
+
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
+
+#if !defined(NDEBUG)
+#define ENABLE_VALIDATION_LAYERS
+#endif
+
+#define NR_CHANNELS 4
+
+struct RenderConfig {
+  std::uint32_t image_width, image_height;
+  std::uint32_t seed;
+  std::uint32_t nr_samples;
+
+  struct Camera {
+    glm::vec3 center;
+    glm::vec3 lookat;
+    glm::vec3 up;
+    float vertical_fov;
+  } camera;
+};
 
 class Renderer {
 public:
@@ -14,38 +35,24 @@ public:
   friend class RenderJob;
 
 private:
-  auto read_binary_file(const std::string&) -> std::vector<std::byte>;
+  void create_instance();
+  void select_physical_device();
+  void select_queue_family_indices();
+  void create_logical_device();
 
-  void create_descriptors();
-  void create_compute_pipeline();
+  vk::raii::Context context;
+  std::unique_ptr<vk::raii::Instance> instance;
+  std::unique_ptr<vk::raii::PhysicalDevice> physical_device;
+  std::optional<std::uint32_t> compute_family_index;
+  std::unique_ptr<vk::raii::Device> device;
+  std::unique_ptr<vk::raii::Queue> compute_queue;
 
-  VkManager vk_manager;
-  const vk::raii::Device& device;
-
-  std::unique_ptr<vk::raii::DescriptorSetLayout> descriptor_set_layout;
-  std::unique_ptr<vk::raii::DescriptorPool> descriptor_pool;
-  std::unique_ptr<vk::raii::DescriptorSet> descriptor_set;
-
-  std::unique_ptr<vk::raii::PipelineLayout> pipeline_layout;
-  std::unique_ptr<vk::raii::Pipeline> pipeline;
-
-  struct PushConstants {
-    PushConstants(const RenderConfig&);
-
-    struct Camera {
-      glm::vec3 center;
-      alignas(16) glm::vec3 pixel_delta_u;
-      alignas(16) glm::vec3 pixel_delta_v;
-      alignas(16) glm::vec3 corner_pixel_pos;
-    } camera;
-
-    std::uint32_t image_width, image_height;
-    std::uint32_t seed;
-    std::uint32_t nr_samples;
-  };
-
-  struct SpecializationConstants {
-    std::uint32_t local_size_x;
-    std::uint32_t local_size_y;
-  } specialization_constants;
+#ifdef ENABLE_VALIDATION_LAYERS
+  std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> debug_messenger;
+  static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT,
+    VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT*,
+    void*);
+#endif
 };
