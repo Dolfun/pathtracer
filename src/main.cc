@@ -5,6 +5,7 @@
 #include <stb_image_write.h>
 #include "renderer.h"
 #include "timeit.h"
+#include "gltf_loader.h"
 
 int main() {
   try {
@@ -30,6 +31,16 @@ int main() {
         .vertical_fov = 90.0f,
       },
     };
+
+    Scene scene = load_gltf("cube.glb");
+    for (auto i = 0z; i < scene.vertices.size(); ++i) {
+      fmt::println("Vertex No.: {}", i);
+      auto position = scene.vertices[i].position;
+      auto normal = scene.vertices[i].position;
+      fmt::println("Position: {} {} {}", position.x, position.y, position.z);
+      fmt::println("Normal: {} {} {}", normal.x, normal.y, normal.z);
+      fmt::println("");
+    }
 
     const float* data;
     std::size_t size;
