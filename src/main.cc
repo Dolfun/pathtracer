@@ -5,12 +5,13 @@
 #include <stb_image_write.h>
 #include "renderer.h"
 #include "timeit.h"
+#include "gltf_loader.h"
 
 int main() {
   try {
     std::unique_ptr<Renderer> renderer;
 
-    timeit("Initialization", [&] { 
+    timeit("Renderer::Renderer", [&] {
       renderer = std::make_unique<Renderer>(); 
     });
 
@@ -19,30 +20,37 @@ int main() {
     std::uniform_int_distribution<std::uint32_t> dist;
 
     RenderConfig config {
-      .image_width = 3840,
-      .image_height = 2160,
+      .image_width = 1920,
+      .image_height = 1080,
       .seed = dist(engine),
-      .nr_samples = 100,
+      .sample_count = 32,
       .camera {
         .center = { 0.0f, 0.6f, 1.75f },
         .lookat = { 0.0f, 0.0f, 0.0f },
         .up = { 0.0f, 1.0f, 0.0f },
-        .vertical_fov = 90.0f,
+        .vertical_fov = 80.0f,
       },
     };
 
+    Scene scene;
+    timeit("load_gltf", [&] { 
+      scene = load_gltf("monkey.glb");
+    });
+
     const float* data;
     std::size_t size;
-    timeit("Rendering", [&] { 
-      std::tie(data, size) = renderer->render(config);
+    timeit("Renderer::render", [&] { 
+      std::tie(data, size) = renderer->render(scene, config);
     });
 
     std::vector<uint8_t> image(size);
-    std::transform(std::execution::par, data, data + size, image.begin(), [] (const float x) {
-      return static_cast<std::uint8_t>(x * 255.999f);
+    timeit("std::transform", [&] { 
+      std::transform(std::execution::par, data, data + size, image.begin(), [] (const float x) {
+        return static_cast<std::uint8_t>(x * 255.999f);
+      });
     });
     
-    timeit("Saving", [&] { 
+    timeit("stbi_write_bmp", [&] { 
       stbi_write_bmp("output.bmp", config.image_width, config.image_height, NR_CHANNELS, image.data());
     });
 

@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "render_job.h"
+#include "../timeit.h"
 #include <fmt/core.h>
 #include <fmt/color.h>
 
@@ -142,8 +143,18 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debug_callback(
 }
 #endif
 
-auto Renderer::render(const RenderConfig& config) const -> std::pair<const float*, std::size_t> {
-  RenderJob render_job { *this, config };
-  auto result = render_job.render();
+auto Renderer::render(const Scene& scene, const RenderConfig& config) const
+    -> std::pair<const float*, std::size_t> {
+
+  std::unique_ptr<RenderJob> render_job;
+  timeit("RenderJob::RenderJob", [&] {
+    render_job = std::make_unique<RenderJob>(*this, config, scene);
+  });
+
+  std::pair<const float*, std::size_t> result;
+  timeit("RenderJob::render", [&] {
+    result = render_job->render();
+  });
+
   return result;
 }

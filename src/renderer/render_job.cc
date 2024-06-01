@@ -6,41 +6,82 @@
 
 auto read_binary_file(const std::string& path) -> std::vector<std::byte>;
 
-RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config)
-  : renderer { _renderer }, device { *renderer.device }, config { _config }, 
+RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, const Scene& _scene)
+  : renderer { _renderer }, device { *renderer.device }, config { _config }, scene { _scene },
     allocator { *renderer.device, renderer.physical_device->getMemoryProperties() } {
   
-  create_descriptor_set();
-
-  specialization_constants = {
-    .local_size_x = 32,
-    .local_size_y = 32
-  };
-  create_pipeline();
-
-  result_image_pixel_count = config.image_width * config.image_height;
-  buffer_size = result_image_pixel_count * NR_CHANNELS * sizeof(float);
+  create_scene_buffers();
   create_result_buffers();
-
-  create_command_buffer();
-
   allocator.allocate_and_bind();
 
-  update_descriptor_sets();
+  create_descriptor_set();
+  create_pipeline();
 
+  create_command_buffer();
   command_buffer->reset();
   record_command_buffer();
 }
 
+void RenderJob::create_scene_buffers() {
+  scene_buffer_size = scene.vertices.size() * sizeof(Scene::Vertex);
+
+  vk::BufferCreateInfo scene_staging_buffer_create_info {
+    .size = scene_buffer_size,
+    .usage = vk::BufferUsageFlagBits::eTransferSrc,
+    .sharingMode = vk::SharingMode::eExclusive
+  };
+  scene_staging_buffer = std::make_unique<vk::raii::Buffer>(device, scene_staging_buffer_create_info);
+  allocator.add_resource(*scene_staging_buffer, 
+    vk::MemoryPropertyFlagBits::eHostVisible |
+    vk::MemoryPropertyFlagBits::eHostCoherent
+  );
+
+  vk::BufferCreateInfo scene_buffer_create_info {
+    .size = scene_buffer_size,
+    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+    .sharingMode = vk::SharingMode::eExclusive
+  };
+  scene_buffer = std::make_unique<vk::raii::Buffer>(device, scene_buffer_create_info);
+  allocator.add_resource(*scene_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+}
+
+void RenderJob::create_result_buffers() {
+  result_image_pixel_count = config.image_width * config.image_height;
+  result_buffer_size = result_image_pixel_count * NR_CHANNELS * sizeof(float);
+
+  vk::BufferCreateInfo result_buffer_create_info {
+    .size = result_buffer_size,
+    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
+    .sharingMode = vk::SharingMode::eExclusive
+  };
+  result_buffer = std::make_unique<vk::raii::Buffer>(device, result_buffer_create_info);
+  allocator.add_resource(*result_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+  vk::BufferCreateInfo result_staging_buffer_create_info {
+    .size = result_buffer_size,
+    .usage = vk::BufferUsageFlagBits::eTransferDst,
+    .sharingMode = vk::SharingMode::eExclusive
+  };
+  result_unstaging_buffer = std::make_unique<vk::raii::Buffer>(device, result_staging_buffer_create_info);
+  allocator.add_resource(
+    *result_unstaging_buffer, 
+    vk::MemoryPropertyFlagBits::eHostVisible  |
+    vk::MemoryPropertyFlagBits::eHostCoherent |
+    vk::MemoryPropertyFlagBits::eHostCached
+  );
+}
+
 void RenderJob::create_descriptor_set() {
   // Descriptor set layout
-  std::array<vk::DescriptorSetLayoutBinding, 1> layout_bindings{};
-  layout_bindings[0] = {
-    .binding = 0,
-    .descriptorType = vk::DescriptorType::eStorageBuffer,
-    .descriptorCount = 1,
-    .stageFlags = vk::ShaderStageFlagBits::eCompute
-  };
+  std::array<vk::DescriptorSetLayoutBinding, 2> layout_bindings{};
+  for (std::uint32_t i = 0; i < 2; ++i) {
+    layout_bindings[i] = {
+      .binding = i,
+      .descriptorType = vk::DescriptorType::eStorageBuffer,
+      .descriptorCount = 1,
+      .stageFlags = vk::ShaderStageFlagBits::eCompute
+    };
+  }
 
   vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
     .bindingCount = static_cast<std::uint32_t>(layout_bindings.size()),
@@ -52,7 +93,7 @@ void RenderJob::create_descriptor_set() {
   // Descriptor pool
   vk::DescriptorPoolSize pool_size {
     .type = vk::DescriptorType::eStorageBuffer,
-    .descriptorCount = 1
+    .descriptorCount = static_cast<std::uint32_t>(layout_bindings.size())
   };
 
   vk::DescriptorPoolCreateInfo pool_create_info {
@@ -71,6 +112,31 @@ void RenderJob::create_descriptor_set() {
   };
   vk::raii::DescriptorSets descriptor_sets { device, allocate_info };
   descriptor_set = std::make_unique<vk::raii::DescriptorSet>(std::move(descriptor_sets.front()));
+
+  // Descriptor Writes
+  std::array buffers { **scene_buffer, **result_buffer };
+  std::array buffer_sizes { scene_buffer_size, result_buffer_size };
+  std::vector<vk::DescriptorBufferInfo> buffer_infos;
+  std::vector<vk::WriteDescriptorSet> descriptor_writes;
+  buffer_infos.resize(buffers.size());
+  descriptor_writes.resize(buffers.size());
+  for (std::uint32_t i = 0; i < buffers.size(); ++i) {
+    buffer_infos[i] = {
+      .buffer = buffers[i],
+      .offset = 0,
+      .range = buffer_sizes[i]
+    };
+
+    descriptor_writes[i] = {
+      .dstSet = *descriptor_set,
+      .dstBinding = i,
+      .dstArrayElement = 0,
+      .descriptorCount = 1,
+      .descriptorType = vk::DescriptorType::eStorageBuffer,
+      .pBufferInfo = &buffer_infos[i]
+    };
+  }
+  device.updateDescriptorSets(descriptor_writes, {});
 }
 
 void RenderJob::create_pipeline() {
@@ -92,6 +158,11 @@ void RenderJob::create_pipeline() {
     .constantID = 1,
     .offset = offsetof(SpecializationConstants, local_size_y),
     .size = sizeof(SpecializationConstants::local_size_y)
+  };
+
+  specialization_constants = {
+    .local_size_x = 32,
+    .local_size_y = 32
   };
 
   vk::SpecializationInfo specialization_info {
@@ -132,27 +203,6 @@ void RenderJob::create_pipeline() {
   pipeline = std::make_unique<vk::raii::Pipeline>(device, nullptr, create_info);
 }
 
-void RenderJob::create_result_buffers() {
-  vk::BufferCreateInfo result_buffer_create_info {
-    .size = buffer_size,
-    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc
-  };
-  result_buffer = std::make_unique<vk::raii::Buffer>(device, result_buffer_create_info);
-  allocator.add_resource(*result_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-  vk::BufferCreateInfo result_staging_buffer_create_info {
-    .size = buffer_size,
-    .usage = vk::BufferUsageFlagBits::eTransferDst
-  };
-  result_unstaging_buffer = std::make_unique<vk::raii::Buffer>(device, result_staging_buffer_create_info);
-  allocator.add_resource(
-    *result_unstaging_buffer, 
-    vk::MemoryPropertyFlagBits::eHostVisible  |
-    vk::MemoryPropertyFlagBits::eHostCoherent |
-    vk::MemoryPropertyFlagBits::eHostCached
-  );
-}
-
 void RenderJob::create_command_buffer() {
   vk::CommandPoolCreateInfo pool_create_info {
     .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -169,25 +219,6 @@ void RenderJob::create_command_buffer() {
   command_buffer = std::make_unique<vk::raii::CommandBuffer>(std::move(command_buffers.front()));
 }
 
-void RenderJob::update_descriptor_sets() {
-  vk::DescriptorBufferInfo buffer_info {
-    .buffer = *result_buffer,
-    .offset = 0,
-    .range = buffer_size
-  };
-
-  vk::WriteDescriptorSet descriptor_write {
-    .dstSet = *descriptor_set,
-    .dstBinding = 0,
-    .dstArrayElement = 0,
-    .descriptorCount = 1,
-    .descriptorType = vk::DescriptorType::eStorageBuffer,
-    .pBufferInfo = &buffer_info
-  };
-
-  device.updateDescriptorSets({ descriptor_write }, {});
-}
-
 void RenderJob::record_command_buffer() {
   vk::CommandBufferBeginInfo begin_info {
     .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -199,17 +230,44 @@ void RenderJob::record_command_buffer() {
     vk::PipelineBindPoint::eCompute, *pipeline_layout, 0, { *descriptor_set }, {}
   );
 
-  PushConstants push_constants { config };
+  PushConstants push_constants { config, scene };
   command_buffer->pushConstants<PushConstants>(
     *pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
+
+  vk::BufferCopy scene_buffer_copy_info {
+    .srcOffset = 0,
+    .dstOffset = 0,
+    .size = scene_buffer_size
+  };
+  command_buffer->copyBuffer(
+    *scene_staging_buffer, *scene_buffer, { scene_buffer_copy_info }
+  );
+
+  vk::BufferMemoryBarrier2 scene_buffer_memory_barrier {
+    .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+    .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+    .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+    .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+    .buffer = *scene_buffer,
+    .offset = 0,
+    .size = scene_buffer_size
+  };
+
+  vk::DependencyInfo scene_buffer_dependency_info {
+    .bufferMemoryBarrierCount = 1,
+    .pBufferMemoryBarriers = &scene_buffer_memory_barrier
+  };
+  command_buffer->pipelineBarrier2(scene_buffer_dependency_info);
 
   auto [local_size_x, local_size_y] = specialization_constants;
   std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;
   std::uint32_t global_size_y = (config.image_width  + local_size_y - 1) / local_size_y;
   command_buffer->dispatch(global_size_x, global_size_y, 1);
 
-  vk::BufferMemoryBarrier2 buffer_memory_barrier {
+  vk::BufferMemoryBarrier2 result_buffer_memory_barrier {
     .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
     .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
     .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
@@ -218,25 +276,34 @@ void RenderJob::record_command_buffer() {
     .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
     .buffer = *result_buffer,
     .offset = 0,
-    .size = buffer_size,
+    .size = result_buffer_size
   };
   
-  vk::DependencyInfo dependency_info {
+  vk::DependencyInfo result_buffer_dependency_info {
     .bufferMemoryBarrierCount = 1,
-    .pBufferMemoryBarriers = &buffer_memory_barrier,
+    .pBufferMemoryBarriers = &result_buffer_memory_barrier,
   };
-  command_buffer->pipelineBarrier2(dependency_info);
+  command_buffer->pipelineBarrier2(result_buffer_dependency_info);
 
-  vk::BufferCopy copy_region {
+  vk::BufferCopy result_buffer_copy_info {
     .srcOffset = 0,
     .dstOffset = 0,
-    .size = buffer_size
+    .size = result_buffer_size
   };
-  command_buffer->copyBuffer(*result_buffer, *result_unstaging_buffer, { copy_region });
+  command_buffer->copyBuffer(
+    *result_buffer, *result_unstaging_buffer, { result_buffer_copy_info }
+  );
+
   command_buffer->end();
 }
 
 auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
+  {
+    auto bind_info = allocator.get_bind_info(*scene_staging_buffer).value();
+    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, scene_buffer_size);
+    std::memcpy(ptr, scene.vertices.data(), scene_buffer_size);
+  }
+
   vk::SubmitInfo submit_info {
     .commandBufferCount = 1,
     .pCommandBuffers = &(**command_buffer),
@@ -245,16 +312,19 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   vk::FenceCreateInfo fence_create_info{};
   vk::raii::Fence fence { device, fence_create_info };
   renderer.compute_queue->submit(submit_info, fence);
-  while (device.waitForFences({ fence }, true, UINT32_MAX) != vk::Result::eSuccess);
+  while (device.waitForFences({ fence }, true, UINT32_MAX) != vk::Result::eSuccess) {};
 
-  auto bind_info = allocator.get_bind_info(*result_unstaging_buffer).value();
-  void* ptr = (*device).mapMemory(bind_info.memory, 0, buffer_size);
-  return std::make_pair(static_cast<const float*>(ptr), result_image_pixel_count * NR_CHANNELS);
+  {
+    auto bind_info = allocator.get_bind_info(*result_unstaging_buffer).value();
+    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, result_buffer_size);
+    return std::make_pair(static_cast<const float*>(ptr), result_image_pixel_count * NR_CHANNELS);
+  }
 }
 
-PushConstants::PushConstants(const RenderConfig& config) :
+PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
   image_width { config.image_width }, image_height { config.image_height },
-  seed { config.seed }, nr_samples { config.nr_samples } {
+  seed { config.seed }, sample_count { config.sample_count },
+  vertex_count { static_cast<std::uint32_t>(scene.vertices.size()) } {
 
   float image_width = static_cast<float>(config.image_width);
   float image_height = static_cast<float>(config.image_height);

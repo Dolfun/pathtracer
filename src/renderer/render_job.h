@@ -3,7 +3,7 @@
 #include "vk_allocator.h"
 
 struct PushConstants {
-  PushConstants(const RenderConfig&);
+  PushConstants(const RenderConfig&, const Scene&);
 
   struct Camera {
     glm::vec3 center;
@@ -14,7 +14,8 @@ struct PushConstants {
 
   std::uint32_t image_width, image_height;
   std::uint32_t seed;
-  std::uint32_t nr_samples;
+  std::uint32_t sample_count;
+  std::uint32_t vertex_count;
 };
 
 struct SpecializationConstants {
@@ -24,20 +25,22 @@ struct SpecializationConstants {
 
 class RenderJob {
 public:
-  RenderJob(const Renderer&, const RenderConfig&);
+  RenderJob(const Renderer&, const RenderConfig&, const Scene&);
+  
   auto render() const -> std::pair<const float*, std::size_t>;
 
 private:
+  void create_scene_buffers();
+  void create_result_buffers();
   void create_descriptor_set();
   void create_pipeline();
-  void create_result_buffers();
   void create_command_buffer();
-  void update_descriptor_sets();
   void record_command_buffer();
 
   const Renderer& renderer;
   const vk::raii::Device& device;
   const RenderConfig& config;
+  const Scene& scene;
   VkAllocator allocator;
 
   std::unique_ptr<vk::raii::DescriptorSetLayout> descriptor_set_layout;
@@ -51,7 +54,10 @@ private:
   std::unique_ptr<vk::raii::CommandPool> command_pool;
   std::unique_ptr<vk::raii::CommandBuffer> command_buffer;
 
+  std::size_t scene_buffer_size;
+  std::unique_ptr<vk::raii::Buffer> scene_buffer, scene_staging_buffer;
+
   std::size_t result_image_pixel_count;
-  std::size_t buffer_size;
+  std::size_t result_buffer_size;
   std::unique_ptr<vk::raii::Buffer> result_buffer, result_unstaging_buffer;
 };

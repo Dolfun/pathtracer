@@ -1,8 +1,18 @@
 #version 460
 
+// <--------------------------------Input------------------------------------->
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-layout (set = 0, binding = 0) buffer result_ssbo {
+struct Vertex {
+  vec3 pos;
+  vec3 normal;
+};
+
+layout (set = 0, binding = 0) readonly buffer scene_ssbo {
+  Vertex vertices[];
+};
+
+layout (set = 0, binding = 1) writeonly buffer result_ssbo {
   vec4 result[];
 };
 
@@ -16,11 +26,13 @@ layout (push_constant) uniform constant {
   Camera camera;
   uint image_width, image_height;
   uint seed;
-  uint nr_samples;
-} info;
+  uint sample_count;
+  uint vertex_count;
+};
 
+// <----------------------------------RNG------------------------------------->
 // https://nullprogram.com/blog/2018/07/31/
-uint triple32(uint x) {
+void triple32(inout uint x) {
   x ^= x >> 17;
   x *= 0xed5ad4bbU;
   x ^= x >> 11;
@@ -28,52 +40,105 @@ uint triple32(uint x) {
   x ^= x >> 15;
   x *= 0x31848babU;
   x ^= x >> 14;
-  return x;
 }
 
 uint rand_state;
 float rand_float() {
-  rand_state = triple32(rand_state);
+  triple32(rand_state);
   return float(rand_state) / float(~0u);
 }
 
+// <----------------------------------Ray------------------------------------->
 struct Ray {
   vec3 origin;
   vec3 dir;
 };
 
-Ray get_ray_through_pixel(uint x, uint y) {
+Ray get_ray_through_pixel(const uint x, const uint y) {
   vec3 pixel_center = 
-    info.camera.corner_pixel_pos + 
-    (rand_float() - 0.5 + x) * info.camera.pixel_delta_u +
-    (rand_float() - 0.5 + y) * info.camera.pixel_delta_v;
+    camera.corner_pixel_pos + 
+    (rand_float() - 0.5 + x) * camera.pixel_delta_u +
+    (rand_float() - 0.5 + y) * camera.pixel_delta_v;
 
   Ray ray;
-  ray.origin = info.camera.center;
+  ray.origin = camera.center;
   ray.dir = normalize(pixel_center - ray.origin);
   return ray;
 }
 
-vec3 get_ray_color(Ray ray) {
+// <------------------------------Intersection-------------------------------->
+struct Intersection {
+  vec3 pos, normal;
+  float t;
+};
+
+void ray_triangle_intersection(
+    const Ray ray, 
+    const Vertex va,
+    const Vertex vb,
+    const Vertex vc,
+    inout Intersection intersection) {
+
+  vec3 edge1 = vb.pos - va.pos;
+  vec3 edge2 = vc.pos - va.pos;
+  vec3 ray_cross_edge2 = cross(ray.dir, edge2);
+  float det = dot(edge1, ray_cross_edge2);
+  const float epsilon = 1e-4;
+  if (abs(det) < epsilon) return;
+
+  float inv_det = 1.0 / det;
+  vec3 s = ray.origin - va.pos;
+  float u = inv_det * dot(s, ray_cross_edge2);
+  if (u < 0.0 || u > 1.0) return;
+
+  vec3 s_cross_edge1 = cross(s, edge1);
+  float v = inv_det * dot(ray.dir, s_cross_edge1);
+  if (v < 0.0 || u + v > 1.0) return;
+
+  float t = inv_det * dot(edge2, s_cross_edge1);
+  if (t > epsilon && t < intersection.t) {
+    float w = 1.0 - u - v;
+    intersection.t = t;
+    intersection.pos = w * va.pos + u * vb.pos + v * vc.pos;
+    intersection.normal = normalize(w * va.normal + u * vb.normal + v * vc.normal);
+  }
+}
+
+// <-------------------------------Ray color---------------------------------->
+vec3 get_ray_color(const Ray ray) {
   float a = 0.5 * (ray.dir.y + 1.0);
   vec3 color = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), a);
+
+  Intersection intersection;
+  intersection.t = 1.0 / 0.0;
+  for (uint i = 0; i < vertex_count; i += 3) {
+    ray_triangle_intersection(
+      ray, vertices[i], vertices[i + 1], vertices[i + 2], intersection
+    );
+  }
+
+  if (!isinf(intersection.t)) {
+    color = 0.5 * (1.0 + intersection.normal);
+  }
+
   return color;
 }
 
+// <---------------------------------Main------------------------------------->
 void main() {
   uint id_x = gl_GlobalInvocationID.y;
   uint id_y = gl_GlobalInvocationID.x;
-  if (id_x >= info.image_width || id_y >= info.image_height) return;
+  if (id_x >= image_width || id_y >= image_height) return;
 
-  uint index = id_y * info.image_width + id_x;
-  rand_state = index ^ info.seed;
+  uint index = id_y * image_width + id_x;
+  rand_state = index ^ seed;
 
   vec3 color = vec3(0.0);
-  for (uint i = 0; i < info.nr_samples; ++i) {
+  for (uint i = 0; i < sample_count; ++i) {
     Ray ray = get_ray_through_pixel(id_x, id_y);
     color += get_ray_color(ray);
   }
-  color /= info.nr_samples;
+  color /= sample_count;
 
   result[index] = vec4(color, 1.0f);
 }

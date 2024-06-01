@@ -2,6 +2,7 @@
 #include <memory>
 #include <optional>
 #include <glm/vec3.hpp>
+#include "../Scene.h"
 
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
@@ -16,7 +17,7 @@
 struct RenderConfig {
   std::uint32_t image_width, image_height;
   std::uint32_t seed;
-  std::uint32_t nr_samples;
+  std::uint32_t sample_count;
 
   struct Camera {
     glm::vec3 center;
@@ -30,7 +31,8 @@ class Renderer {
 public:
   Renderer();
 
-  auto render(const RenderConfig&) const -> std::pair<const float*, std::size_t>;
+  auto render(const Scene&, const RenderConfig&) const 
+    -> std::pair<const float*, std::size_t>;
 
   friend class RenderJob;
 
