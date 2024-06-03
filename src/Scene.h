@@ -1,12 +1,24 @@
 #pragma once
-#include <glm/vec4.hpp>
+#include <glm/vec3.hpp>
 #include <vector>
 
 struct Scene {
   struct Vertex {
-    glm::vec4 position;
-    glm::vec4 normal;
+    glm::vec3 position;
+    alignas(16) glm::vec3 normal;
   };
 
-  std::vector<Vertex> vertices;
+  struct Triangle {
+    Vertex vertices[3];
+
+    const Vertex& operator[] (std::size_t i) const noexcept {
+      return vertices[i];
+    };
+
+    Vertex& operator[] (std::size_t i) noexcept {
+      return const_cast<Vertex&>(const_cast<const Triangle&>(*this)[i]);
+    };
+  };
+
+  std::vector<Triangle> triangles;
 };

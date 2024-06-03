@@ -161,11 +161,14 @@ void Loader::process_mesh(const tinygltf::Mesh& mesh, const glm::mat4& transform
     }
 
     auto normal_transform = glm::mat3(glm::transpose(glm::inverse(transform)));
-    for (std::size_t i = 0; i < indices.size(); ++i) {
-      auto index = indices.get(i);
-      auto position = glm::vec3(transform * glm::vec4(positions.get(index), 1.0f));
-      auto normal   = glm::normalize(glm::vec3(normal_transform * normals.get(index)));
-      result.vertices.emplace_back(glm::vec4(position, 0.0f), glm::vec4(normal, 0.0f));
+    for (std::size_t i = 0; i < indices.size(); i += 3) {
+      Scene::Triangle triangle;
+      for (std::size_t j = 0; j < 3; ++j) {
+        auto index = indices.get(i + j);
+        triangle[j].position = transform * glm::vec4(positions.get(index), 1.0f);
+        triangle[j].normal = glm::normalize(glm::vec3(normal_transform * normals.get(index)));
+      }
+      result.triangles.push_back(triangle);
     }
   }
 }

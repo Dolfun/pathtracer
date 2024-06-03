@@ -15,7 +15,7 @@ struct PushConstants {
   std::uint32_t image_width, image_height;
   std::uint32_t seed;
   std::uint32_t sample_count;
-  std::uint32_t vertex_count;
+  std::uint32_t triangle_count;
 };
 
 struct SpecializationConstants {

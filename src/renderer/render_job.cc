@@ -23,7 +23,7 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, con
 }
 
 void RenderJob::create_scene_buffers() {
-  scene_buffer_size = scene.vertices.size() * sizeof(Scene::Vertex);
+  scene_buffer_size = scene.triangles.size() * sizeof(Scene::Triangle);
 
   vk::BufferCreateInfo scene_staging_buffer_create_info {
     .size = scene_buffer_size,
@@ -73,8 +73,9 @@ void RenderJob::create_result_buffers() {
 
 void RenderJob::create_descriptor_set() {
   // Descriptor set layout
-  std::array<vk::DescriptorSetLayoutBinding, 2> layout_bindings{};
-  for (std::uint32_t i = 0; i < 2; ++i) {
+  constexpr std::uint32_t descriptor_count = 2;
+  std::array<vk::DescriptorSetLayoutBinding, descriptor_count> layout_bindings{};
+  for (std::uint32_t i = 0; i < descriptor_count; ++i) {
     layout_bindings[i] = {
       .binding = i,
       .descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -93,7 +94,7 @@ void RenderJob::create_descriptor_set() {
   // Descriptor pool
   vk::DescriptorPoolSize pool_size {
     .type = vk::DescriptorType::eStorageBuffer,
-    .descriptorCount = static_cast<std::uint32_t>(layout_bindings.size())
+    .descriptorCount = descriptor_count
   };
 
   vk::DescriptorPoolCreateInfo pool_create_info {
@@ -118,9 +119,9 @@ void RenderJob::create_descriptor_set() {
   std::array buffer_sizes { scene_buffer_size, result_buffer_size };
   std::vector<vk::DescriptorBufferInfo> buffer_infos;
   std::vector<vk::WriteDescriptorSet> descriptor_writes;
-  buffer_infos.resize(buffers.size());
-  descriptor_writes.resize(buffers.size());
-  for (std::uint32_t i = 0; i < buffers.size(); ++i) {
+  buffer_infos.resize(descriptor_count);
+  descriptor_writes.resize(descriptor_count);
+  for (std::uint32_t i = 0; i < descriptor_count; ++i) {
     buffer_infos[i] = {
       .buffer = buffers[i],
       .offset = 0,
@@ -301,7 +302,7 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   {
     auto bind_info = allocator.get_bind_info(*scene_staging_buffer).value();
     void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, scene_buffer_size);
-    std::memcpy(ptr, scene.vertices.data(), scene_buffer_size);
+    std::memcpy(ptr, scene.triangles.data(), scene_buffer_size);
   }
 
   vk::SubmitInfo submit_info {
@@ -324,7 +325,7 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
 PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
   image_width { config.image_width }, image_height { config.image_height },
   seed { config.seed }, sample_count { config.sample_count },
-  vertex_count { static_cast<std::uint32_t>(scene.vertices.size()) } {
+  triangle_count { static_cast<std::uint32_t>(scene.triangles.size()) } {
 
   float image_width = static_cast<float>(config.image_width);
   float image_height = static_cast<float>(config.image_height);
