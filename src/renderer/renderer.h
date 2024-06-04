@@ -31,7 +31,7 @@ class Renderer {
 public:
   Renderer();
 
-  auto render(const Scene&, const RenderConfig&) const 
+  auto render(Scene&, const RenderConfig&) const 
     -> std::pair<const float*, std::size_t>;
 
   friend class RenderJob;

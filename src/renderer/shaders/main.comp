@@ -12,18 +12,29 @@ struct Triangle {
   Vertex v[3];
 };
 
-layout (set = 0, binding = 0) readonly buffer scene_ssbo {
-  Triangle triangles[];
-};
-
-layout (set = 0, binding = 1) writeonly buffer result_ssbo {
-  vec4 result[];
+struct BVHNode {
+  vec3 aabb_min;
+  uint left_or_begin;
+  vec3 aabb_max;
+  uint triangle_count;
 };
 
 struct Camera {
   vec3 center;
   vec3 pixel_delta_u, pixel_delta_v;
   vec3 corner_pixel_pos;
+};
+
+layout (set = 0, binding = 0) readonly buffer triangles_ssbo {
+  Triangle triangles[];
+};
+
+layout (set = 0, binding = 1) readonly buffer bvh_ssbo {
+  BVHNode bvh_nodes[];
+};
+
+layout (set = 0, binding = 2) writeonly buffer result_ssbo {
+  vec4 result[];
 };
 
 layout (push_constant) uniform constant {
@@ -70,13 +81,25 @@ Ray get_ray_through_pixel(const uint x, const uint y) {
   return ray;
 }
 
-// <------------------------------Intersection-------------------------------->
+// <-------------------------Ray-AABB-Intersection---------------------------->
+bool ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
+  vec3 inv_dir = 1.0 / ray.dir;
+  vec3 t_min = inv_dir * (aabb_min - ray.origin);
+  vec3 t_max = inv_dir * (aabb_max - ray.origin);
+  vec3 t1 = min(t_min, t_max);
+  vec3 t2 = max(t_min, t_max);
+  float t_near = max(max(t1.x, t1.y), t1.z);
+  float t_far  = min(min(t2.x, t2.y), t2.z);
+  return t_near <= t_far;
+}
+
+// <---------------------Ray-Triangle-Intersection---------------------------->
 struct Intersection {
   vec3 pos, normal;
   float t;
 };
 
-void ray_triangle_intersection(
+void ray_triangle_intersect(
     const Ray ray,
     const Triangle triangle,
     inout Intersection intersection) {
@@ -108,16 +131,44 @@ void ray_triangle_intersection(
   }
 }
 
-// <-------------------------------Ray color---------------------------------->
+// <-------------------------Ray-Scene-Intersection--------------------------->
+#define STACK_SIZE 32
+uint stack[STACK_SIZE];
+void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
+  uint top = 0;
+  stack[top++] = 0;
+
+  while (top != 0) {
+    if (top >= STACK_SIZE) return;
+    BVHNode node = bvh_nodes[stack[--top]];
+
+    if (!ray_aabb_intersect(ray, node.aabb_min, node.aabb_max)) continue;
+
+    if (node.triangle_count > 0) {
+      for (uint i = 0; i < node.triangle_count; ++i) {
+        ray_triangle_intersect(ray, triangles[node.left_or_begin + i], intersection);
+      }
+    } else {
+      stack[top++] = node.left_or_begin;
+      stack[top++] = node.left_or_begin + 1;
+    }
+  }
+}
+
+void ray_scene_intersect2(const Ray ray, inout Intersection intersection) {
+  for (uint i = 0; i < triangle_count; ++i) {
+    ray_triangle_intersect(ray, triangles[i], intersection);
+  }
+}
+
+// <-------------------------------Ray-color---------------------------------->
 vec3 get_ray_color(const Ray ray) {
   float a = 0.5 * (ray.dir.y + 1.0);
   vec3 color = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), a);
 
   Intersection intersection;
   intersection.t = 1.0 / 0.0;
-  for (uint i = 0; i < triangle_count; ++i) {
-    ray_triangle_intersection(ray, triangles[i], intersection);
-  }
+  ray_scene_intersect(ray, intersection);
 
   if (!isinf(intersection.t)) {
     color = 0.5 * (1.0 + intersection.normal);

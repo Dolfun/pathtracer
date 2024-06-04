@@ -1,70 +1,76 @@
 #include "render_job.h"
 #include "renderer.h"
+#include "../timeit.h"
 #include <fstream>
-#include <fmt/core.h>
 #include <glm/glm.hpp>
 
 auto read_binary_file(const std::string& path) -> std::vector<std::byte>;
 
-RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, const Scene& _scene)
-  : renderer { _renderer }, device { *renderer.device }, config { _config }, scene { _scene },
-    allocator { *renderer.device, renderer.physical_device->getMemoryProperties() } {
+RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Scene& _scene)
+  : renderer { _renderer }, device { *renderer.device }, config { _config },
+    allocator { *renderer.device, renderer.physical_device->getMemoryProperties() },
+    scene { _scene } {
+
+  timeit("BVH Construction", [&] {
+    bvh_nodes = build_bvh(scene);
+  });
   
-  create_scene_buffers();
-  create_result_buffers();
+  create_input_buffers();
+  create_output_buffers();
   allocator.allocate_and_bind();
 
   create_descriptor_set();
   create_pipeline();
 
   create_command_buffer();
-  command_buffer->reset();
   record_command_buffer();
 }
 
-void RenderJob::create_scene_buffers() {
-  scene_buffer_size = scene.triangles.size() * sizeof(Scene::Triangle);
+void RenderJob::create_input_buffers() {
+  triangle_data_size = scene.triangles.size() * sizeof(Scene::Triangle);
+  bvh_data_size = bvh_nodes.size() * sizeof(BVHNode);
+  input_buffer_size = triangle_data_size + bvh_data_size;
 
-  vk::BufferCreateInfo scene_staging_buffer_create_info {
-    .size = scene_buffer_size,
+  vk::BufferCreateInfo input_staging_buffer_create_info {
+    .size = input_buffer_size,
     .usage = vk::BufferUsageFlagBits::eTransferSrc,
     .sharingMode = vk::SharingMode::eExclusive
   };
-  scene_staging_buffer = std::make_unique<vk::raii::Buffer>(device, scene_staging_buffer_create_info);
-  allocator.add_resource(*scene_staging_buffer, 
+  input_staging_buffer = std::make_unique<vk::raii::Buffer>(device, input_staging_buffer_create_info);
+  allocator.add_resource(*input_staging_buffer, 
     vk::MemoryPropertyFlagBits::eHostVisible |
     vk::MemoryPropertyFlagBits::eHostCoherent
   );
 
-  vk::BufferCreateInfo scene_buffer_create_info {
-    .size = scene_buffer_size,
+  vk::BufferCreateInfo input_buffer_create_info {
+    .size = input_buffer_size,
     .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
     .sharingMode = vk::SharingMode::eExclusive
   };
-  scene_buffer = std::make_unique<vk::raii::Buffer>(device, scene_buffer_create_info);
-  allocator.add_resource(*scene_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+  input_buffer = std::make_unique<vk::raii::Buffer>(device, input_buffer_create_info);
+  allocator.add_resource(*input_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
 }
 
-void RenderJob::create_result_buffers() {
-  result_image_pixel_count = config.image_width * config.image_height;
-  result_buffer_size = result_image_pixel_count * NR_CHANNELS * sizeof(float);
+void RenderJob::create_output_buffers() {
+  output_image_pixel_count = config.image_width * config.image_height;
+  output_buffer_size = output_image_pixel_count * NR_CHANNELS * sizeof(float);
 
-  vk::BufferCreateInfo result_buffer_create_info {
-    .size = result_buffer_size,
+  vk::BufferCreateInfo output_buffer_create_info {
+    .size = output_buffer_size,
     .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
     .sharingMode = vk::SharingMode::eExclusive
   };
-  result_buffer = std::make_unique<vk::raii::Buffer>(device, result_buffer_create_info);
-  allocator.add_resource(*result_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
+  output_buffer = std::make_unique<vk::raii::Buffer>(device, output_buffer_create_info);
+  allocator.add_resource(*output_buffer, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-  vk::BufferCreateInfo result_staging_buffer_create_info {
-    .size = result_buffer_size,
+  vk::BufferCreateInfo output_staging_buffer_create_info {
+    .size = output_buffer_size,
     .usage = vk::BufferUsageFlagBits::eTransferDst,
     .sharingMode = vk::SharingMode::eExclusive
   };
-  result_unstaging_buffer = std::make_unique<vk::raii::Buffer>(device, result_staging_buffer_create_info);
+  output_unstaging_buffer = std::make_unique<vk::raii::Buffer>(device, output_staging_buffer_create_info);
   allocator.add_resource(
-    *result_unstaging_buffer, 
+    *output_unstaging_buffer, 
     vk::MemoryPropertyFlagBits::eHostVisible  |
     vk::MemoryPropertyFlagBits::eHostCoherent |
     vk::MemoryPropertyFlagBits::eHostCached
@@ -73,7 +79,7 @@ void RenderJob::create_result_buffers() {
 
 void RenderJob::create_descriptor_set() {
   // Descriptor set layout
-  constexpr std::uint32_t descriptor_count = 2;
+  constexpr std::uint32_t descriptor_count = 3;
   std::array<vk::DescriptorSetLayoutBinding, descriptor_count> layout_bindings{};
   for (std::uint32_t i = 0; i < descriptor_count; ++i) {
     layout_bindings[i] = {
@@ -115,8 +121,9 @@ void RenderJob::create_descriptor_set() {
   descriptor_set = std::make_unique<vk::raii::DescriptorSet>(std::move(descriptor_sets.front()));
 
   // Descriptor Writes
-  std::array buffers { **scene_buffer, **result_buffer };
-  std::array buffer_sizes { scene_buffer_size, result_buffer_size };
+  std::array buffers { **input_buffer, **input_buffer, **output_buffer };
+  std::array offsets { 0uz, triangle_data_size, 0uz };
+  std::array ranges  { triangle_data_size, bvh_data_size, output_buffer_size };
   std::vector<vk::DescriptorBufferInfo> buffer_infos;
   std::vector<vk::WriteDescriptorSet> descriptor_writes;
   buffer_infos.resize(descriptor_count);
@@ -124,8 +131,8 @@ void RenderJob::create_descriptor_set() {
   for (std::uint32_t i = 0; i < descriptor_count; ++i) {
     buffer_infos[i] = {
       .buffer = buffers[i],
-      .offset = 0,
-      .range = buffer_sizes[i]
+      .offset = offsets[i],
+      .range = ranges[i]
     };
 
     descriptor_writes[i] = {
@@ -221,6 +228,7 @@ void RenderJob::create_command_buffer() {
 }
 
 void RenderJob::record_command_buffer() {
+  command_buffer->reset();
   vk::CommandBufferBeginInfo begin_info {
     .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
   };
@@ -236,63 +244,63 @@ void RenderJob::record_command_buffer() {
     *pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
 
-  vk::BufferCopy scene_buffer_copy_info {
+  vk::BufferCopy input_buffer_copy_info {
     .srcOffset = 0,
     .dstOffset = 0,
-    .size = scene_buffer_size
+    .size = input_buffer_size
   };
   command_buffer->copyBuffer(
-    *scene_staging_buffer, *scene_buffer, { scene_buffer_copy_info }
+    *input_staging_buffer, *input_buffer, { input_buffer_copy_info }
   );
 
-  vk::BufferMemoryBarrier2 scene_buffer_memory_barrier {
+  vk::BufferMemoryBarrier2 input_buffer_memory_barrier {
     .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
     .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
     .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
     .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
     .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
     .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-    .buffer = *scene_buffer,
+    .buffer = *input_buffer,
     .offset = 0,
-    .size = scene_buffer_size
+    .size = input_buffer_size
   };
 
-  vk::DependencyInfo scene_buffer_dependency_info {
+  vk::DependencyInfo input_buffer_dependency_info {
     .bufferMemoryBarrierCount = 1,
-    .pBufferMemoryBarriers = &scene_buffer_memory_barrier
+    .pBufferMemoryBarriers = &input_buffer_memory_barrier
   };
-  command_buffer->pipelineBarrier2(scene_buffer_dependency_info);
+  command_buffer->pipelineBarrier2(input_buffer_dependency_info);
 
   auto [local_size_x, local_size_y] = specialization_constants;
   std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;
   std::uint32_t global_size_y = (config.image_width  + local_size_y - 1) / local_size_y;
   command_buffer->dispatch(global_size_x, global_size_y, 1);
 
-  vk::BufferMemoryBarrier2 result_buffer_memory_barrier {
+  vk::BufferMemoryBarrier2 output_buffer_memory_barrier {
     .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
     .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
     .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
     .dstAccessMask = vk::AccessFlagBits2::eMemoryRead,
     .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
     .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-    .buffer = *result_buffer,
+    .buffer = *output_buffer,
     .offset = 0,
-    .size = result_buffer_size
+    .size = output_buffer_size
   };
   
-  vk::DependencyInfo result_buffer_dependency_info {
+  vk::DependencyInfo output_buffer_dependency_info {
     .bufferMemoryBarrierCount = 1,
-    .pBufferMemoryBarriers = &result_buffer_memory_barrier,
+    .pBufferMemoryBarriers = &output_buffer_memory_barrier,
   };
-  command_buffer->pipelineBarrier2(result_buffer_dependency_info);
+  command_buffer->pipelineBarrier2(output_buffer_dependency_info);
 
-  vk::BufferCopy result_buffer_copy_info {
+  vk::BufferCopy output_buffer_copy_info {
     .srcOffset = 0,
     .dstOffset = 0,
-    .size = result_buffer_size
+    .size = output_buffer_size
   };
   command_buffer->copyBuffer(
-    *result_buffer, *result_unstaging_buffer, { result_buffer_copy_info }
+    *output_buffer, *output_unstaging_buffer, { output_buffer_copy_info }
   );
 
   command_buffer->end();
@@ -300,9 +308,11 @@ void RenderJob::record_command_buffer() {
 
 auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   {
-    auto bind_info = allocator.get_bind_info(*scene_staging_buffer).value();
-    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, scene_buffer_size);
-    std::memcpy(ptr, scene.triangles.data(), scene_buffer_size);
+    auto bind_info = allocator.get_bind_info(*input_staging_buffer).value();
+    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, input_buffer_size);
+    std::memcpy(ptr, scene.triangles.data(), triangle_data_size);
+    std::memcpy(static_cast<std::byte*>(ptr) + triangle_data_size, bvh_nodes.data(), bvh_data_size);
+    (*device).unmapMemory(bind_info.memory);
   }
 
   vk::SubmitInfo submit_info {
@@ -316,9 +326,9 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   while (device.waitForFences({ fence }, true, UINT32_MAX) != vk::Result::eSuccess) {};
 
   {
-    auto bind_info = allocator.get_bind_info(*result_unstaging_buffer).value();
-    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, result_buffer_size);
-    return std::make_pair(static_cast<const float*>(ptr), result_image_pixel_count * NR_CHANNELS);
+    auto bind_info = allocator.get_bind_info(*output_unstaging_buffer).value();
+    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, output_buffer_size);
+    return std::make_pair(static_cast<const float*>(ptr), output_image_pixel_count * NR_CHANNELS);
   }
 }
 

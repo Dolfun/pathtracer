@@ -8,7 +8,11 @@ set (
   renderer.cc
 )
 add_library(renderer ${sources})
-target_link_libraries(renderer PUBLIC fmt::fmt Vulkan::Vulkan glm::glm)
+target_link_libraries(
+  renderer 
+  PUBLIC  fmt::fmt Vulkan::Vulkan glm::glm 
+  PRIVATE bvh
+)
 target_compile_features(renderer PUBLIC cxx_std_23)
 target_include_directories(renderer PUBLIC .)
 
