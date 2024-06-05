@@ -23,7 +23,7 @@ int main() {
       .image_width = 1920,
       .image_height = 1080,
       .seed = dist(engine),
-      .sample_count = 32,
+      .sample_count = 100,
       .camera {
         .center = { 0.0f, 0.6f, 1.75f },
         .lookat = { 0.0f, 0.0f, 0.0f },
@@ -34,7 +34,7 @@ int main() {
 
     Scene scene;
     timeit("load_gltf", [&] { 
-      scene = load_gltf("monkey.glb");
+      scene = load_gltf("monkeyhd.glb");
     });
 
     const float* data;

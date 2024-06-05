@@ -150,26 +150,36 @@ void Loader::process_mesh(const tinygltf::Mesh& mesh, const glm::mat4& transform
       assert(normals.is_valid());
     }
 
-    AccessorHelper<std::uint16_t> indices;
-    {
-      const auto& accessor = model.accessors[primitive.indices];
-      assert(!accessor.sparse.isSparse);
-      assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT);
-      assert(accessor.type == TINYGLTF_TYPE_SCALAR);
+    const auto& accessor = model.accessors[primitive.indices];
+    assert(!accessor.sparse.isSparse);
+    assert(accessor.type == TINYGLTF_TYPE_SCALAR);
+
+    auto process = [&] <typename T> (AccessorHelper<T>& indices) {
       indices.assign(model, accessor);
       assert(indices.is_valid());
-    }
 
-    auto normal_transform = glm::mat3(glm::transpose(glm::inverse(transform)));
-    for (std::size_t i = 0; i < indices.size(); i += 3) {
-      Scene::Triangle triangle;
-      for (std::size_t j = 0; j < 3; ++j) {
-        auto index = indices.get(i + j);
-        triangle[j].position = transform * glm::vec4(positions.get(index), 1.0f);
-        triangle[j].normal = glm::normalize(glm::vec3(normal_transform * normals.get(index)));
+      auto normal_transform = glm::mat3(glm::transpose(glm::inverse(transform)));
+      for (std::size_t i = 0; i < indices.size(); i += 3) {
+        Scene::Triangle triangle;
+        for (std::size_t j = 0; j < 3; ++j) {
+          auto index = indices.get(i + j);
+          triangle[j].position = transform * glm::vec4(positions.get(index), 1.0f);
+          triangle[j].normal = glm::normalize(glm::vec3(normal_transform * normals.get(index)));
+        }
+        result.triangles.push_back(triangle);
       }
-      result.triangles.push_back(triangle);
+    };
+
+    if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+      AccessorHelper<std::uint16_t> indices;
+      process(indices);
+    } else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+      AccessorHelper<std::uint32_t> indices;
+      process(indices);
+    } else {
+      throw std::runtime_error("Unknown index type in gltf file.");
     }
+    
   }
 }
 

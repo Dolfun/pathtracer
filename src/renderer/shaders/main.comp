@@ -108,7 +108,7 @@ void ray_triangle_intersect(
   vec3 edge2 = triangle.v[2].pos - triangle.v[0].pos;
   vec3 ray_cross_edge2 = cross(ray.dir, edge2);
   float det = dot(edge1, ray_cross_edge2);
-  const float epsilon = 1e-4;
+  const float epsilon = 1e-6;
   if (abs(det) < epsilon) return;
 
   float inv_det = 1.0 / det;
@@ -132,7 +132,7 @@ void ray_triangle_intersect(
 }
 
 // <-------------------------Ray-Scene-Intersection--------------------------->
-#define STACK_SIZE 32
+#define STACK_SIZE 64
 uint stack[STACK_SIZE];
 void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
   uint top = 0;
