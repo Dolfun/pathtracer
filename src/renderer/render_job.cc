@@ -121,20 +121,24 @@ void RenderJob::create_descriptor_set() {
   descriptor_set = std::make_unique<vk::raii::DescriptorSet>(std::move(descriptor_sets.front()));
 
   // Descriptor Writes
-  std::array buffers { **input_buffer, **input_buffer, **output_buffer };
-  std::array offsets { 0uz, triangle_data_size, 0uz };
-  std::array ranges  { triangle_data_size, bvh_data_size, output_buffer_size };
-  std::vector<vk::DescriptorBufferInfo> buffer_infos;
-  std::vector<vk::WriteDescriptorSet> descriptor_writes;
-  buffer_infos.resize(descriptor_count);
-  descriptor_writes.resize(descriptor_count);
+  std::array<vk::DescriptorBufferInfo, 3> buffer_infos{};
+  buffer_infos[0] = vk::DescriptorBufferInfo {
+    .buffer = **input_buffer,
+    .offset = 0,
+    .range  = triangle_data_size
+  };
+  buffer_infos[1] = vk::DescriptorBufferInfo {
+    .buffer = **input_buffer,
+    .offset = triangle_data_size,
+    .range  = bvh_data_size
+  };
+  buffer_infos[2] = vk::DescriptorBufferInfo {
+    .buffer = **output_buffer,
+    .offset = 0,
+    .range  = output_buffer_size
+  };
+  std::array<vk::WriteDescriptorSet, descriptor_count> descriptor_writes{};
   for (std::uint32_t i = 0; i < descriptor_count; ++i) {
-    buffer_infos[i] = {
-      .buffer = buffers[i],
-      .offset = offsets[i],
-      .range = ranges[i]
-    };
-
     descriptor_writes[i] = {
       .dstSet = *descriptor_set,
       .dstBinding = i,

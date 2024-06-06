@@ -82,7 +82,8 @@ Ray get_ray_through_pixel(const uint x, const uint y) {
 }
 
 // <-------------------------Ray-AABB-Intersection---------------------------->
-bool ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
+const float infinity = 0.0 / 1.0;
+float ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
   vec3 inv_dir = 1.0 / ray.dir;
   vec3 t_min = inv_dir * (aabb_min - ray.origin);
   vec3 t_max = inv_dir * (aabb_max - ray.origin);
@@ -90,7 +91,7 @@ bool ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max)
   vec3 t2 = max(t_min, t_max);
   float t_near = max(max(t1.x, t1.y), t1.z);
   float t_far  = min(min(t2.x, t2.y), t2.z);
-  return t_near <= t_far;
+  return t_near <= t_far ? t_near : infinity;
 }
 
 // <---------------------Ray-Triangle-Intersection---------------------------->
@@ -142,15 +143,23 @@ void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
     if (top >= STACK_SIZE) return;
     BVHNode node = bvh_nodes[stack[--top]];
 
-    if (!ray_aabb_intersect(ray, node.aabb_min, node.aabb_max)) continue;
-
     if (node.triangle_count > 0) {
       for (uint i = 0; i < node.triangle_count; ++i) {
         ray_triangle_intersect(ray, triangles[node.left_or_begin + i], intersection);
       }
     } else {
-      stack[top++] = node.left_or_begin;
-      stack[top++] = node.left_or_begin + 1;
+      BVHNode left  = bvh_nodes[node.left_or_begin];
+      BVHNode right = bvh_nodes[node.left_or_begin + 1];
+      float dist_left = ray_aabb_intersect(ray, left.aabb_min, left.aabb_max);
+      float dist_right = ray_aabb_intersect(ray, right.aabb_min, right.aabb_max);
+      
+      if (dist_left < dist_right) {
+        if (dist_right != infinity) stack[top++] = node.left_or_begin + 1;
+        if (dist_left  != infinity) stack[top++] = node.left_or_begin;
+      } else {
+        if (dist_left  != infinity) stack[top++] = node.left_or_begin;
+        if (dist_right != infinity) stack[top++] = node.left_or_begin + 1;
+      }
     }
   }
 }
