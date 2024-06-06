@@ -29,6 +29,11 @@ struct AABB {
     expand(triangle[2].position);
   }
 
+  void expand(const AABB& other) {
+    box_max = glm::max(box_max, other.box_max);
+    box_min = glm::min(box_min, other.box_min);
+  }
+
   float area() const {
     glm::vec3 e = box_max - box_min;
     return e.x * e.y + e.y * e.z + e.z * e.x;
@@ -41,6 +46,12 @@ struct BVHNode2 {
   std::uint32_t begin_index;
   std::uint32_t triangle_count;
 };
+
+struct Bin {
+  AABB bounds;
+  std::uint32_t triangle_count;
+};
+constexpr std::uint32_t bin_count = 8;
 
 class BVHBuilder {
 public:
@@ -107,13 +118,50 @@ public:
     std::uint32_t split_axis;
     float split_pos;
     float split_cost = std::numeric_limits<float>::infinity();
+
+    glm::vec3 bound_min {  infinity };
+    glm::vec3 bound_max { -infinity };
+    for (std::uint32_t i = 0; i < node.triangle_count; ++i) {
+      glm::vec3 v = centroid(triangles[node.begin_index + i]);
+      bound_min = glm::min(bound_min, v);
+      bound_max = glm::max(bound_max, v);
+    }
+
     for (std::uint32_t axis = 0; axis < 3; ++axis) {
+      std::array<Bin, bin_count> bins{};
+      float scale = static_cast<float>(bin_count) / (bound_max[axis] - bound_min[axis]);
       for (std::uint32_t i = 0; i < node.triangle_count; ++i) {
-        float pos = centroid(triangles[node.begin_index + i])[axis];
-        float cost = calculate_cost(node, axis, pos);
+        const auto& triangle = triangles[node.begin_index + i];
+        std::uint32_t index = std::min(
+          bin_count - 1,
+          static_cast<std::uint32_t>((centroid(triangle)[axis] - bound_min[axis]) * scale)
+        );
+        ++bins[index].triangle_count;
+        bins[index].bounds.expand(triangle);
+      }
+
+      std::array<float, bin_count> left_area{}, right_area{};
+      std::array<std::uint32_t, bin_count> left_count{}, right_count{};
+      AABB left_box, right_box;
+      std::uint32_t left_sum = 0, right_sum = 0;
+      for (std::uint32_t i = 0; i < bin_count - 1; ++i) {
+        left_sum += bins[i].triangle_count;
+        left_count[i] = left_sum;
+        left_box.expand(bins[i].bounds);
+        left_area[i] = left_box.area();
+
+        right_sum += bins[bin_count - i - 1].triangle_count;
+        right_count[bin_count - i - 2] = right_sum;
+        right_box.expand(bins[bin_count - i - 1].bounds);
+        right_area[bin_count - i - 2] = right_box.area();
+      }
+
+      scale = (bound_max[axis] - bound_min[axis]) / static_cast<float>(bin_count);
+      for (std::uint32_t i = 0; i < bin_count - 1; ++i) {
+        float cost = left_count[i] * left_area[i] + right_count[i] * right_area[i];
         if (cost < split_cost) {
           split_axis = axis;
-          split_pos = pos;
+          split_pos = bound_min[axis] + scale * (i + 1);
           split_cost = cost;
         }
       }
