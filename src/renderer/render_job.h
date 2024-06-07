@@ -1,13 +1,13 @@
 #pragma once
 #include "renderer.h"
 #include "vk_allocator.h"
-#include "bvh.h"
+#include "../scene/scene.h"
 
 struct PushConstants {
-  PushConstants(const RenderConfig&, const Scene&);
+  PushConstants(const RenderConfig&);
 
   struct Camera {
-    glm::vec3 center;
+    glm::vec3 position;
     alignas(16) glm::vec3 pixel_delta_u;
     alignas(16) glm::vec3 pixel_delta_v;
     alignas(16) glm::vec3 corner_pixel_pos;
@@ -16,7 +16,8 @@ struct PushConstants {
   std::uint32_t image_width, image_height;
   std::uint32_t seed;
   std::uint32_t sample_count;
-  std::uint32_t triangle_count;
+
+  glm::vec3 bg_color;
 };
 
 struct SpecializationConstants {
@@ -24,13 +25,21 @@ struct SpecializationConstants {
   std::uint32_t local_size_y;
 };
 
+struct InputBufferInfo {
+  const void* ptr;
+  std::size_t size;
+};
+
 class RenderJob {
 public:
-  RenderJob(const Renderer&, const RenderConfig&, Scene&);
+  RenderJob(const Renderer&, const RenderConfig&, OptimizedScene&);
   
   auto render() const -> std::pair<const float*, std::size_t>;
 
 private:
+  template <std::size_t index>
+  void add_input_buffer_info(const auto&);
+
   void create_input_buffers();
   void create_output_buffers();
   void create_descriptor_set();
@@ -42,8 +51,10 @@ private:
   const vk::raii::Device& device;
   const RenderConfig& config;
   VkAllocator allocator;
-  Scene& scene;
-  std::vector<BVHNode> bvh_nodes;
+  OptimizedScene& scene;
+
+  static constexpr std::uint32_t input_descriptor_count = 3;
+  std::array<InputBufferInfo, input_descriptor_count> input_buffer_infos;
 
   std::unique_ptr<vk::raii::DescriptorSetLayout> descriptor_set_layout;
   std::unique_ptr<vk::raii::DescriptorPool> descriptor_pool;
@@ -56,8 +67,6 @@ private:
   std::unique_ptr<vk::raii::CommandPool> command_pool;
   std::unique_ptr<vk::raii::CommandBuffer> command_buffer;
 
-  std::size_t triangle_data_size;
-  std::size_t bvh_data_size;
   std::size_t input_buffer_size;
   std::unique_ptr<vk::raii::Buffer> input_buffer, input_staging_buffer;
 
@@ -65,3 +74,11 @@ private:
   std::size_t output_buffer_size;
   std::unique_ptr<vk::raii::Buffer> output_buffer, output_unstaging_buffer;
 };
+
+template <std::size_t index>
+void RenderJob::add_input_buffer_info(const auto& v) {
+  input_buffer_infos[index] = InputBufferInfo {
+    .ptr  = static_cast<const void*>(v.data()),
+    .size = v.size() * sizeof(v[0])
+  };
+}

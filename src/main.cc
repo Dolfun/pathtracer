@@ -6,6 +6,8 @@
 #include "renderer.h"
 #include "timeit.h"
 #include "gltf_loader.h"
+#include "bvh.h"
+#include "scene.h"
 
 int main() {
   try {
@@ -24,8 +26,9 @@ int main() {
       .image_height = 1080,
       .seed = dist(engine),
       .sample_count = 128,
+      .bg_color = { 0.1, 0.1, 0.1 },
       .camera {
-        .center = { 2.5f, 2.5f, 3.5f },
+        .position = { 2.5f, 2.5f, 3.5f },
         .lookat = { 0.0f, 0.0f, 0.0f },
         .up = { 0.0f, 1.0f, 0.0f },
         .vertical_fov = 45.0f,
@@ -33,28 +36,34 @@ int main() {
     };
 
     Scene scene;
-    timeit("load_gltf", [&] { 
-      scene = load_gltf("monkey2.glb");
+    timeit("load_gltf", [&] {
+      scene = load_gltf("monkeyhd.glb");
     });
 
-    const float* data;
-    std::size_t size;
-    timeit("Renderer::render", [&] { 
-      std::tie(data, size) = renderer->render(scene, config);
+    std::vector<BVHNode> bvh_nodes;
+    timeit("Building BVH", [&] {
+      bvh_nodes = build_bvh(scene, 16);
     });
+
+    OptimizedScene optimized_scene;
+    timeit("Optimizing Scene", [&] {
+      optimized_scene = optimize_scene(scene, bvh_nodes);
+    });
+
+    auto [data, size] = renderer->render(optimized_scene, config);
 
     std::vector<uint8_t> image(size);
-    timeit("std::transform", [&] { 
+    timeit("std::transform", [&] {
       std::transform(std::execution::par, data, data + size, image.begin(), [] (const float x) {
         return static_cast<std::uint8_t>(x * 255.999f);
       });
     });
     
-    timeit("stbi_write_bmp", [&] { 
+    timeit("stbi_write_bmp", [&] {
       stbi_write_bmp("output.bmp", config.image_width, config.image_height, NR_CHANNELS, image.data());
     });
 
-    fmt::println("\nTriangle Count: {}", scene.triangles.size());
+    fmt::println("\nTriangle Count: {}", scene.triangle_indices.size());
     
   } catch (const std::exception& e) {
     fmt::println("Exception Occured: {}", e.what());

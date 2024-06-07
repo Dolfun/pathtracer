@@ -1,19 +1,18 @@
 #include "render_job.h"
 #include "renderer.h"
-#include "../timeit.h"
 #include <fstream>
 #include <glm/glm.hpp>
 
 auto read_binary_file(const std::string& path) -> std::vector<std::byte>;
 
-RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Scene& _scene)
+RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, OptimizedScene& _scene)
   : renderer { _renderer }, device { *renderer.device }, config { _config },
     allocator { *renderer.device, renderer.physical_device->getMemoryProperties() },
     scene { _scene } {
 
-  timeit("BVH Construction", [&] {
-    bvh_nodes = build_bvh(scene);
-  });
+  add_input_buffer_info<0>(scene.vertex_positions);
+  add_input_buffer_info<1>(scene.vertex_data);
+  add_input_buffer_info<2>(scene.bvh_nodes);
   
   create_input_buffers();
   create_output_buffers();
@@ -27,9 +26,10 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
 }
 
 void RenderJob::create_input_buffers() {
-  triangle_data_size = scene.triangles.size() * sizeof(Scene::Triangle);
-  bvh_data_size = bvh_nodes.size() * sizeof(BVHNode);
-  input_buffer_size = triangle_data_size + bvh_data_size;
+  input_buffer_size = 0;
+  for (auto buffer_info : input_buffer_infos) {
+    input_buffer_size += buffer_info.size;
+  }
 
   vk::BufferCreateInfo input_staging_buffer_create_info {
     .size = input_buffer_size,
@@ -79,7 +79,7 @@ void RenderJob::create_output_buffers() {
 
 void RenderJob::create_descriptor_set() {
   // Descriptor set layout
-  constexpr std::uint32_t descriptor_count = 3;
+  constexpr std::uint32_t descriptor_count = input_descriptor_count + 1;
   std::array<vk::DescriptorSetLayoutBinding, descriptor_count> layout_bindings{};
   for (std::uint32_t i = 0; i < descriptor_count; ++i) {
     layout_bindings[i] = {
@@ -121,22 +121,23 @@ void RenderJob::create_descriptor_set() {
   descriptor_set = std::make_unique<vk::raii::DescriptorSet>(std::move(descriptor_sets.front()));
 
   // Descriptor Writes
-  std::array<vk::DescriptorBufferInfo, 3> buffer_infos{};
-  buffer_infos[0] = vk::DescriptorBufferInfo {
-    .buffer = **input_buffer,
-    .offset = 0,
-    .range  = triangle_data_size
-  };
-  buffer_infos[1] = vk::DescriptorBufferInfo {
-    .buffer = **input_buffer,
-    .offset = triangle_data_size,
-    .range  = bvh_data_size
-  };
-  buffer_infos[2] = vk::DescriptorBufferInfo {
+  std::array<vk::DescriptorBufferInfo, descriptor_count> descriptor_buffer_infos{};
+  std::size_t offset = 0;
+  for (std::uint32_t i = 0; i < input_descriptor_count; ++i) {
+    descriptor_buffer_infos[i] = vk::DescriptorBufferInfo {
+      .buffer = **input_buffer,
+      .offset = offset,
+      .range  = input_buffer_infos[i].size
+    };
+    offset += input_buffer_infos[i].size;
+  }
+
+  descriptor_buffer_infos.back() = vk::DescriptorBufferInfo {
     .buffer = **output_buffer,
     .offset = 0,
     .range  = output_buffer_size
   };
+
   std::array<vk::WriteDescriptorSet, descriptor_count> descriptor_writes{};
   for (std::uint32_t i = 0; i < descriptor_count; ++i) {
     descriptor_writes[i] = {
@@ -145,7 +146,7 @@ void RenderJob::create_descriptor_set() {
       .dstArrayElement = 0,
       .descriptorCount = 1,
       .descriptorType = vk::DescriptorType::eStorageBuffer,
-      .pBufferInfo = &buffer_infos[i]
+      .pBufferInfo = &descriptor_buffer_infos[i]
     };
   }
   device.updateDescriptorSets(descriptor_writes, {});
@@ -243,7 +244,7 @@ void RenderJob::record_command_buffer() {
     vk::PipelineBindPoint::eCompute, *pipeline_layout, 0, { *descriptor_set }, {}
   );
 
-  PushConstants push_constants { config, scene };
+  PushConstants push_constants { config };
   command_buffer->pushConstants<PushConstants>(
     *pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
@@ -313,9 +314,12 @@ void RenderJob::record_command_buffer() {
 auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   {
     auto bind_info = allocator.get_bind_info(*input_staging_buffer).value();
-    void* ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, input_buffer_size);
-    std::memcpy(ptr, scene.triangles.data(), triangle_data_size);
-    std::memcpy(static_cast<std::byte*>(ptr) + triangle_data_size, bvh_nodes.data(), bvh_data_size);
+    void* dst_ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, input_buffer_size);
+    std::size_t offset = 0;
+    for (auto [src_ptr, size] : input_buffer_infos) {
+      std::memcpy(static_cast<std::byte*>(dst_ptr) + offset, src_ptr, size);
+      offset += size;
+    }
     (*device).unmapMemory(bind_info.memory);
   }
 
@@ -336,20 +340,20 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
   }
 }
 
-PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
-  image_width { config.image_width }, image_height { config.image_height },
-  seed { config.seed }, sample_count { config.sample_count },
-  triangle_count { static_cast<std::uint32_t>(scene.triangles.size()) } {
+PushConstants::PushConstants(const RenderConfig& config) :
+    image_width { config.image_width }, image_height { config.image_height },
+    seed { config.seed }, sample_count { config.sample_count },
+    bg_color { config.bg_color } {
 
   float image_width = static_cast<float>(config.image_width);
   float image_height = static_cast<float>(config.image_height);
   const auto& camera = config.camera;
 
-  glm::vec3 w = glm::normalize(camera.center - camera.lookat);
+  glm::vec3 w = glm::normalize(camera.position - camera.lookat);
   glm::vec3 u = glm::normalize(glm::cross(camera.up, w));
   glm::vec3 v = glm::cross(w, u);
 
-  float focal_length = glm::length(camera.center - camera.lookat);
+  float focal_length = glm::length(camera.position - camera.lookat);
   float theta = glm::radians(camera.vertical_fov);
   float viewport_height = 2.0f * glm::tan(theta / 2.0f) * focal_length;
   float viewport_width = viewport_height * image_width / image_height;
@@ -358,11 +362,11 @@ PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
   glm::vec3 viewport_v = viewport_height * -v;
   glm::vec3 pixel_delta_u = viewport_u / image_width;
   glm::vec3 pixel_delta_v = viewport_v / image_height;
-  glm::vec3 viewport_upper_left = camera.center - focal_length * w - 0.5f * (viewport_u + viewport_v);
+  glm::vec3 viewport_upper_left = camera.position - focal_length * w - 0.5f * (viewport_u + viewport_v);
   glm::vec3 corner_pixel_pos = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
 
   this->camera = {
-    .center = camera.center,
+    .position = camera.position,
     .pixel_delta_u = pixel_delta_u,
     .pixel_delta_v = pixel_delta_v,
     .corner_pixel_pos = corner_pixel_pos

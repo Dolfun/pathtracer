@@ -2,7 +2,7 @@
 #include <memory>
 #include <optional>
 #include <glm/vec3.hpp>
-#include "../Scene.h"
+#include "../scene/scene.h"
 
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
@@ -18,9 +18,10 @@ struct RenderConfig {
   std::uint32_t image_width, image_height;
   std::uint32_t seed;
   std::uint32_t sample_count;
+  glm::vec3 bg_color;
 
   struct Camera {
-    glm::vec3 center;
+    glm::vec3 position;
     glm::vec3 lookat;
     glm::vec3 up;
     float vertical_fov;
@@ -31,7 +32,7 @@ class Renderer {
 public:
   Renderer();
 
-  auto render(Scene&, const RenderConfig&) const 
+  auto render(OptimizedScene&, const RenderConfig&) const 
     -> std::pair<const float*, std::size_t>;
 
   friend class RenderJob;

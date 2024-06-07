@@ -1,15 +1,19 @@
 #version 460
-
-// <--------------------------------Input------------------------------------->
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-struct Vertex {
-  vec3 pos;
-  vec3 normal;
+// <--------------------------------Structs----------------------------------->
+
+struct TrianglePos {
+  vec3 v[3];
 };
 
-struct Triangle {
-  Vertex v[3];
+struct VertexData {
+  vec3 normal;
+  uint material_index;
+};
+
+struct TriangleData {
+  VertexData v[3];
 };
 
 struct BVHNode {
@@ -20,20 +24,26 @@ struct BVHNode {
 };
 
 struct Camera {
-  vec3 center;
+  vec3 position;
   vec3 pixel_delta_u, pixel_delta_v;
   vec3 corner_pixel_pos;
 };
 
-layout (set = 0, binding = 0) readonly buffer triangles_ssbo {
-  Triangle triangles[];
+// <------------------------------Descriptors--------------------------------->
+
+layout (set = 0, binding = 0) buffer triangle_pos_ssbo {
+  TrianglePos triangle_pos[];
 };
 
-layout (set = 0, binding = 1) readonly buffer bvh_ssbo {
+layout (set = 0, binding = 1) readonly buffer triangle_data_ssbo {
+  TriangleData triangle_data[];
+};
+
+layout (set = 0, binding = 2) readonly buffer bvh_ssbo {
   BVHNode bvh_nodes[];
 };
 
-layout (set = 0, binding = 2) writeonly buffer result_ssbo {
+layout (set = 0, binding = 3) writeonly buffer result_ssbo {
   vec4 result[];
 };
 
@@ -42,7 +52,7 @@ layout (push_constant) uniform constant {
   uint image_width, image_height;
   uint seed;
   uint sample_count;
-  uint triangle_count;
+  vec3 bg_color;
 };
 
 // <----------------------------------RNG------------------------------------->
@@ -76,13 +86,13 @@ Ray get_ray_through_pixel(const uint x, const uint y) {
     (rand_float() - 0.5 + y) * camera.pixel_delta_v;
 
   Ray ray;
-  ray.origin = camera.center;
+  ray.origin = camera.position;
   ray.dir = normalize(pixel_center - ray.origin);
   return ray;
 }
 
 // <-------------------------Ray-AABB-Intersection---------------------------->
-const float infinity = 0.0 / 1.0;
+const float INFINITY = 1.0 / 0.0;
 float ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
   vec3 inv_dir = 1.0 / ray.dir;
   vec3 t_min = inv_dir * (aabb_min - ray.origin);
@@ -91,29 +101,31 @@ float ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max
   vec3 t2 = max(t_min, t_max);
   float t_near = max(max(t1.x, t1.y), t1.z);
   float t_far  = min(min(t2.x, t2.y), t2.z);
-  return t_near <= t_far ? t_near : infinity;
+  return t_near <= t_far ? t_near : INFINITY;
 }
 
 // <---------------------Ray-Triangle-Intersection---------------------------->
 struct Intersection {
-  vec3 pos, normal;
   float t;
+  float u, v;
+  uint triangle_index;
 };
 
 void ray_triangle_intersect(
     const Ray ray,
-    const Triangle triangle,
+    const uint triangle_index,
     inout Intersection intersection) {
 
-  vec3 edge1 = triangle.v[1].pos - triangle.v[0].pos;
-  vec3 edge2 = triangle.v[2].pos - triangle.v[0].pos;
+  TrianglePos triangle = triangle_pos[triangle_index];
+  vec3 edge1 = triangle.v[1] - triangle.v[0];
+  vec3 edge2 = triangle.v[2] - triangle.v[0];
   vec3 ray_cross_edge2 = cross(ray.dir, edge2);
   float det = dot(edge1, ray_cross_edge2);
   const float epsilon = 1e-6;
   if (abs(det) < epsilon) return;
 
   float inv_det = 1.0 / det;
-  vec3 s = ray.origin - triangle.v[0].pos;
+  vec3 s = ray.origin - triangle.v[0];
   float u = inv_det * dot(s, ray_cross_edge2);
   if (u < 0.0 || u > 1.0) return;
 
@@ -123,12 +135,10 @@ void ray_triangle_intersect(
 
   float t = inv_det * dot(edge2, s_cross_edge1);
   if (t > epsilon && t < intersection.t) {
-    float w = 1.0 - u - v;
     intersection.t = t;
-    intersection.pos = w * triangle.v[0].pos + u * triangle.v[1].pos + v * triangle.v[2].pos;
-    intersection.normal = normalize(
-      w * triangle.v[0].normal + u * triangle.v[1].normal + v * triangle.v[2].normal
-    );
+    intersection.u = u;
+    intersection.v = v;
+    intersection.triangle_index = triangle_index;
   }
 }
 
@@ -145,7 +155,7 @@ void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
 
     if (node.triangle_count > 0) {
       for (uint i = 0; i < node.triangle_count; ++i) {
-        ray_triangle_intersect(ray, triangles[node.left_or_begin + i], intersection);
+        ray_triangle_intersect(ray, node.left_or_begin + i, intersection);
       }
     } else {
       BVHNode left  = bvh_nodes[node.left_or_begin];
@@ -154,33 +164,36 @@ void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
       float dist_right = ray_aabb_intersect(ray, right.aabb_min, right.aabb_max);
       
       if (dist_left < dist_right) {
-        if (dist_right != infinity) stack[top++] = node.left_or_begin + 1;
-        if (dist_left  != infinity) stack[top++] = node.left_or_begin;
+        if (!isinf(dist_right)) stack[top++] = node.left_or_begin + 1;
+        if (!isinf(dist_left )) stack[top++] = node.left_or_begin;
       } else {
-        if (dist_left  != infinity) stack[top++] = node.left_or_begin;
-        if (dist_right != infinity) stack[top++] = node.left_or_begin + 1;
+        if (!isinf(dist_left )) stack[top++] = node.left_or_begin;
+        if (!isinf(dist_right)) stack[top++] = node.left_or_begin + 1;
       }
     }
   }
 }
 
-void ray_scene_intersect2(const Ray ray, inout Intersection intersection) {
-  for (uint i = 0; i < triangle_count; ++i) {
-    ray_triangle_intersect(ray, triangles[i], intersection);
-  }
-}
-
 // <-------------------------------Ray-color---------------------------------->
 vec3 get_ray_color(const Ray ray) {
-  float a = 0.5 * (ray.dir.y + 1.0);
-  vec3 color = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), a);
+  vec3 color = bg_color;
 
   Intersection intersection;
-  intersection.t = 1.0 / 0.0;
+  intersection.t = INFINITY;
   ray_scene_intersect(ray, intersection);
 
   if (!isinf(intersection.t)) {
-    color = 0.5 * (1.0 + intersection.normal);
+    TriangleData triangle = triangle_data[intersection.triangle_index];
+    float u = intersection.u;
+    float v = intersection.v;
+    float w = 1.0 - u - v;
+    vec3 normal = normalize(
+      w * triangle.v[0].normal +
+      u * triangle.v[1].normal +
+      v * triangle.v[2].normal
+    );
+
+    color = 0.5 * (1.0 + normal);
   }
 
   return color;
