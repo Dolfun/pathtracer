@@ -13,6 +13,7 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Opt
   add_input_buffer_info<0>(scene.vertex_positions);
   add_input_buffer_info<1>(scene.vertex_data);
   add_input_buffer_info<2>(scene.bvh_nodes);
+  add_input_buffer_info<3>(scene.materials);
   
   create_input_buffers();
   create_output_buffers();

@@ -41,5 +41,7 @@ OptimizedScene optimize_scene(const Scene& scene, const std::vector<BVHNode>& no
     }
   );
 
+  optimized_scene.materials = scene.materials;
+
   return optimized_scene;
 }

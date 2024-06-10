@@ -22,22 +22,22 @@ int main() {
     std::uniform_int_distribution<std::uint32_t> dist;
 
     RenderConfig config {
-      .image_width = 1920,
-      .image_height = 1080,
+      .image_width = 1080,
+      .image_height = 1920,
       .seed = dist(engine),
       .sample_count = 128,
       .bg_color = { 0.1, 0.1, 0.1 },
       .camera {
-        .position = { 2.5f, 2.5f, 3.5f },
+        .position = { 4.2f, 4.0f, 2.8f },
         .lookat = { 0.0f, 0.0f, 0.0f },
         .up = { 0.0f, 1.0f, 0.0f },
-        .vertical_fov = 45.0f,
+        .vertical_fov = 40.0f,
       },
     };
 
     Scene scene;
     timeit("load_gltf", [&] {
-      scene = load_gltf("monkeyhd.glb");
+      scene = load_gltf("sorceress.glb");
     });
 
     std::vector<BVHNode> bvh_nodes;
@@ -64,6 +64,7 @@ int main() {
     });
 
     fmt::println("\nTriangle Count: {}", scene.triangle_indices.size());
+    fmt::println("Material Count: {}", scene.materials.size());
     
   } catch (const std::exception& e) {
     fmt::println("Exception Occured: {}", e.what());

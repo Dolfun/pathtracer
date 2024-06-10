@@ -53,7 +53,7 @@ private:
   VkAllocator allocator;
   OptimizedScene& scene;
 
-  static constexpr std::uint32_t input_descriptor_count = 3;
+  static constexpr std::uint32_t input_descriptor_count = 4;
   std::array<InputBufferInfo, input_descriptor_count> input_buffer_infos;
 
   std::unique_ptr<vk::raii::DescriptorSetLayout> descriptor_set_layout;

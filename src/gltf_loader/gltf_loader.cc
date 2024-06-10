@@ -51,7 +51,8 @@ public:
   void process();
 
 private:
-  void process_node(const tinygltf::Node&, glm::mat4&);
+  void process_node(const tinygltf::Node&, glm::mat4);
+  void process_material(const tinygltf::Material&);
 
   template <typename T>
   auto get_attribute_accessor(const tinygltf::Primitive&, const std::string&) const
@@ -97,12 +98,18 @@ void Loader::process() {
     glm::mat4 transform { 1.0f };
     process_node(model.nodes[i], transform);
   }
+
+  for (const auto& material : model.materials) {
+    process_material(material);
+  }
 }
 
-void Loader::process_node(const tinygltf::Node& node, glm::mat4& transform) {
+void Loader::process_node(const tinygltf::Node& node, glm::mat4 transform) {
   if (!node.matrix.empty()) {
-    glm::dmat4 mat;
-    std::memcpy(&mat, node.matrix.data(), sizeof(glm::dmat4));
+    glm::dmat4 dmat;
+    std::memcpy(&dmat, node.matrix.data(), sizeof(glm::dmat4));
+    transform *= glm::mat4(dmat);
+
   } else {
     if (!node.translation.empty()) {
       glm::vec3 translate { node.translation[0], node.translation[1], node.translation[2] };
@@ -132,6 +139,44 @@ void Loader::process_node(const tinygltf::Node& node, glm::mat4& transform) {
   for (auto i : node.children) {
     process_node(model.nodes[i], transform);
   }
+}
+
+void Loader::process_material(const tinygltf::Material& gltf_material) {
+  const auto& pbr = gltf_material.pbrMetallicRoughness;
+  glm::vec4 base_color_factor {
+    pbr.baseColorFactor[0],
+    pbr.baseColorFactor[1],
+    pbr.baseColorFactor[2],
+    pbr.baseColorFactor[3]
+  };
+
+  glm::vec3 emissive_factor {
+    gltf_material.emissiveFactor[0],
+    gltf_material.emissiveFactor[1],
+    gltf_material.emissiveFactor[2]
+  };
+
+  assert(pbr.baseColorTexture.texCoord           == 0);
+  assert(pbr.metallicRoughnessTexture.texCoord   == 0);
+  assert(gltf_material.normalTexture.texCoord    == 0);
+  assert(gltf_material.occlusionTexture.texCoord == 0);
+  assert(gltf_material.emissiveTexture.texCoord  == 0);
+
+  Scene::Material material {
+    .base_color_factor = base_color_factor,
+    .base_color_texture_index         = pbr.baseColorTexture.index,
+    .metallic_factor                  = static_cast<float>(pbr.metallicFactor),
+    .roughness_factor                 = static_cast<float>(pbr.roughnessFactor),
+    .metallic_roughness_texture_index = pbr.metallicRoughnessTexture.index,
+    .normal_scale                     = static_cast<float>(gltf_material.normalTexture.scale),
+    .normal_texture_index             = gltf_material.normalTexture.index,
+    .occlusion_strength               = static_cast<float>(gltf_material.occlusionTexture.strength),
+    .occlusion_texture_index          = gltf_material.occlusionTexture.index,
+    .emissive_factor                  = emissive_factor,
+    .emissive_texture_index           = gltf_material.emissiveTexture.index
+  };
+
+  scene.materials.push_back(material);
 }
 
 template <typename T>
@@ -186,7 +231,8 @@ void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::
     Scene::Vertex vertex {
       .position = glm::vec3(transform * glm::vec4(positions[i], 1.0f)),
       .normal = glm::normalize(glm::vec3(normal_transform * normals[i])),
-      .texcoord = tex_coords[i]
+      .texcoord = tex_coords[i],
+      .material_index = primitive.material
     };
 
     if (!tangents.empty()) {

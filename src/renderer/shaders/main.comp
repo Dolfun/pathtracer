@@ -27,6 +27,20 @@ struct BVHNode {
   uint triangle_count;
 };
 
+struct Material {
+  vec4 base_color_factor;
+  int base_color_texture_index;
+  float metallic_factor;
+  float roughness_factor;
+  int metallic_roughness_texture_index;
+  float normal_scale;
+  int normal_texture_index;
+  float occlusion_strength;
+  int occlusion_texture_index;
+  vec3 emissive_factor;
+  int emissive_texture_index;
+};
+
 struct Camera {
   vec3 position;
   vec3 pixel_delta_u, pixel_delta_v;
@@ -47,7 +61,11 @@ layout (set = 0, binding = 2) readonly buffer bvh_ssbo {
   BVHNode bvh_nodes[];
 };
 
-layout (set = 0, binding = 3) writeonly buffer result_ssbo {
+layout (set = 0, binding = 3) readonly buffer material_ssbo {
+  Material materials[];
+};
+
+layout (set = 0, binding = 4) writeonly buffer result_ssbo {
   vec4 result[];
 };
 
