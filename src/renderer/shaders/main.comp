@@ -9,6 +9,10 @@ struct TrianglePos {
 
 struct VertexData {
   vec3 normal;
+  float texcoord_u;
+  vec3 tangent;
+  float texcoord_v;
+  vec3 bitangent;
   uint material_index;
 };
 

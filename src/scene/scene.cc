@@ -10,13 +10,17 @@ OptimizedScene optimize_scene(const Scene& scene, const std::vector<BVHNode>& no
   optimized_scene.vertex_data.reserve(vertex_count);
   for (const auto& vertex_indices : scene.triangle_indices) {
     for (auto i : vertex_indices) {
+      const auto& vertex = scene.vertices[i];
+
       optimized_scene.vertex_positions.push_back(
-        glm::vec4(scene.vertices[i].position, 0.0f)
+        glm::vec4(vertex.position, 0.0f)
       );
 
       OptimizedScene::VertexData vertex_data {
-        .normal = scene.vertices[i].normal,
-        .material_index = scene.vertices[i].material_index
+        .normal_and_texcoord_u = glm::vec4(vertex.normal, vertex.texcoord.x),
+        .tangent_and_texcoord_v = glm::vec4(vertex.tangent, vertex.texcoord.y),
+        .bitangent = vertex.bitangnet,
+        .material_index = vertex.material_index
       };
       optimized_scene.vertex_data.push_back(vertex_data);
     }

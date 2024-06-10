@@ -52,9 +52,15 @@ public:
 
 private:
   void process_node(const tinygltf::Node&, glm::mat4&);
-  void process_primitive(const tinygltf::Primitive&, const glm::mat4&);
+
+  template <typename T>
+  auto get_attribute_accessor(const tinygltf::Primitive&, const std::string&) const
+    -> AccessorHelper<T>;
+
   template <typename T>
   void process_indices(const AccessorHelper<T>&);
+
+  void process_primitive(const tinygltf::Primitive&, const glm::mat4&);
 
   Scene& scene;
   tinygltf::Model model;
@@ -128,38 +134,68 @@ void Loader::process_node(const tinygltf::Node& node, glm::mat4& transform) {
   }
 }
 
-void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::mat4& transform) {
-  AccessorHelper<glm::vec3> positions;
-  {
-    auto it = primitive.attributes.find("POSITION");
-    assert(it != primitive.attributes.end());
-    const auto& accessor = model.accessors[it->second];
-    assert(!accessor.sparse.isSparse);
-    assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+template <typename T>
+auto Loader::get_attribute_accessor(
+  const tinygltf::Primitive& primitive, 
+  const std::string& attribute) const
+    -> AccessorHelper<T> {
+  auto it = primitive.attributes.find(attribute);
+  assert(it != primitive.attributes.end());
+  const auto& accessor = model.accessors[it->second];
+  assert(!accessor.sparse.isSparse);
+  assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+  constexpr std::size_t nr_compnents = sizeof(T) / sizeof(float);
+  if constexpr (nr_compnents == 2) {
+    assert(accessor.type == TINYGLTF_TYPE_VEC2);
+  } else if constexpr (nr_compnents == 3) {
     assert(accessor.type == TINYGLTF_TYPE_VEC3);
-    positions = AccessorHelper<glm::vec3> { model, accessor };
+  } else if constexpr (nr_compnents == 4) {
+    assert(accessor.type == TINYGLTF_TYPE_VEC4);
+  } else {
+    static_assert(false, "Invalid type for attribute accessor.");
   }
-    
-  AccessorHelper<glm::vec3> normals;
-  {
-    auto it = primitive.attributes.find("NORMAL");
-    assert(it != primitive.attributes.end());
-    const auto& accessor = model.accessors[it->second];
-    assert(!accessor.sparse.isSparse);
-    assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-    assert(accessor.type == TINYGLTF_TYPE_VEC3);
-    normals = AccessorHelper<glm::vec3> { model, accessor };
+  return AccessorHelper<T> { model, accessor };
+}
+
+template <typename T>
+void Loader::process_indices(const AccessorHelper<T>& indices) {
+  for (std::size_t i = 0; i < indices.count(); i += 3) {
+    Scene::VertexIndices vertex_indices = {
+      index_offset + indices[i],
+      index_offset + indices[i + 1],
+      index_offset + indices[i + 2],
+    };
+    scene.triangle_indices.push_back(vertex_indices);
+  }
+}
+
+void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::mat4& transform) {
+  auto positions = get_attribute_accessor<glm::vec3>(primitive, "POSITION");
+  auto normals = get_attribute_accessor<glm::vec3>(primitive, "NORMAL");
+  auto tex_coords = get_attribute_accessor<glm::vec2>(primitive, "TEXCOORD_0");
+  AccessorHelper<glm::vec4> tangents;
+  if (primitive.attributes.contains("TANGENT")) {
+    tangents = get_attribute_accessor<glm::vec4>(primitive, "TANGENT");
   }
 
   std::size_t vertex_count = positions.count();
   assert(vertex_count == normals.count());
+  assert(vertex_count == tex_coords.count());
   auto normal_transform = glm::mat3(glm::transpose(glm::inverse(transform)));
   for (std::size_t i = 0; i < vertex_count; ++i) {
     Scene::Vertex vertex {
       .position = glm::vec3(transform * glm::vec4(positions[i], 1.0f)),
-      .normal = glm::normalize(glm::vec3(normal_transform *normals[i])),
-      .material_index = static_cast<std::uint32_t>(primitive.material)
+      .normal = glm::normalize(glm::vec3(normal_transform * normals[i])),
+      .texcoord = tex_coords[i]
     };
+
+    if (!tangents.empty()) {
+      vertex.tangent = glm::vec3(tangents[i]);
+      vertex.bitangnet = glm::cross(normals[i], vertex.tangent) * tangents[i].w;
+      vertex.tangent = glm::normalize(glm::vec3(normal_transform * vertex.tangent));
+      vertex.bitangnet = glm::normalize(glm::vec3(normal_transform * vertex.bitangnet));
+    }
+
     scene.vertices.push_back(vertex);
   }
 
@@ -177,18 +213,6 @@ void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::
   }
 
   index_offset += vertex_count;
-}
-
-template <typename T>
-void Loader::process_indices(const AccessorHelper<T>& indices) {
-  for (std::size_t i = 0; i < indices.count(); i += 3) {
-    Scene::VertexIndices vertex_indices = {
-      index_offset + indices[i],
-      index_offset + indices[i + 1],
-      index_offset + indices[i + 2],
-    };
-    scene.triangle_indices.push_back(vertex_indices);
-  }
 }
 
 Scene load_gltf(const std::string& path) {
