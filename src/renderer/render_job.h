@@ -1,7 +1,26 @@
 #pragma once
 #include "renderer.h"
 #include "vk_allocator.h"
-#include "../scene/scene.h"
+#include "../scene.h"
+#include "bvh.h"
+
+struct alignas(16) PackedVertexData {
+  glm::vec4 normal_and_texcoord_u;
+  glm::vec4 tangent_and_texcoord_v;
+  glm::vec3 bitangent;
+  std::int32_t material_index;
+};
+static_assert(alignof(PackedVertexData) == 16);
+static_assert(sizeof(PackedVertexData)  == 48);
+
+struct alignas(16) PackedBVHNode {
+  glm::vec3 aabb_min;
+  std::uint32_t left_or_begin;
+  glm::vec3 aabb_max;
+  std::uint32_t triangle_count;
+};
+static_assert(alignof(PackedBVHNode) == 16);
+static_assert(sizeof(PackedBVHNode)  == 32);
 
 struct PushConstants {
   PushConstants(const RenderConfig&);
@@ -32,11 +51,13 @@ struct InputBufferInfo {
 
 class RenderJob {
 public:
-  RenderJob(const Renderer&, const RenderConfig&, OptimizedScene&);
+  RenderJob(const Renderer&, const RenderConfig&, Scene&);
   
   auto render() const -> std::pair<const float*, std::size_t>;
 
 private:
+  void process_scene();
+
   template <std::size_t index>
   void add_input_buffer_info(const auto&);
 
@@ -51,7 +72,12 @@ private:
   const vk::raii::Device& device;
   const RenderConfig& config;
   VkAllocator allocator;
-  OptimizedScene& scene;
+
+  Scene& scene;
+  std::vector<BVHNode> bvh_nodes;
+  std::vector<glm::vec4> vertex_positions;
+  std::vector<PackedVertexData> packed_vertex_data;
+  std::vector<PackedBVHNode> packed_bvh_nodes;
 
   static constexpr std::uint32_t input_descriptor_count = 4;
   std::array<InputBufferInfo, input_descriptor_count> input_buffer_infos;

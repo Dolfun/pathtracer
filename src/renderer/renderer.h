@@ -1,8 +1,7 @@
 #pragma once
 #include <memory>
 #include <optional>
-#include <glm/vec3.hpp>
-#include "../scene/scene.h"
+#include "../scene.h"
 
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
@@ -32,7 +31,7 @@ class Renderer {
 public:
   Renderer();
 
-  auto render(OptimizedScene&, const RenderConfig&) const 
+  auto render(Scene&, const RenderConfig&) const 
     -> std::pair<const float*, std::size_t>;
 
   friend class RenderJob;

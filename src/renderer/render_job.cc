@@ -1,18 +1,25 @@
 #include "render_job.h"
 #include "renderer.h"
+#include "../timeit.h"
 #include <fstream>
 #include <glm/glm.hpp>
 
 auto read_binary_file(const std::string& path) -> std::vector<std::byte>;
 
-RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, OptimizedScene& _scene)
+RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Scene& _scene)
   : renderer { _renderer }, device { *renderer.device }, config { _config },
     allocator { *renderer.device, renderer.physical_device->getMemoryProperties() },
     scene { _scene } {
 
-  add_input_buffer_info<0>(scene.vertex_positions);
-  add_input_buffer_info<1>(scene.vertex_data);
-  add_input_buffer_info<2>(scene.bvh_nodes);
+  timeit("Building BVH", [&] {
+    bvh_nodes = build_bvh(scene, 16);
+  });
+
+  process_scene();
+
+  add_input_buffer_info<0>(vertex_positions);
+  add_input_buffer_info<1>(packed_vertex_data);
+  add_input_buffer_info<2>(packed_bvh_nodes);
   add_input_buffer_info<3>(scene.materials);
   
   create_input_buffers();
@@ -24,6 +31,44 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Opt
 
   create_command_buffer();
   record_command_buffer();
+}
+
+void RenderJob::process_scene() {
+  std::size_t vertex_count = scene.triangle_indices.size() * 3;
+  vertex_positions.reserve(vertex_count);
+  packed_vertex_data.reserve(vertex_count);
+  for (const auto& vertex_indices : scene.triangle_indices) {
+    for (auto i : vertex_indices) {
+      const auto& vertex = scene.vertices[i];
+
+      vertex_positions.push_back(
+        glm::vec4(vertex.position, 0.0f)
+      );
+
+      PackedVertexData vertex_data {
+        .normal_and_texcoord_u = glm::vec4(vertex.normal, vertex.texcoord.x),
+        .tangent_and_texcoord_v = glm::vec4(vertex.tangent, vertex.texcoord.y),
+        .bitangent = vertex.bitangnet,
+        .material_index = vertex.material_index
+      };
+      packed_vertex_data.push_back(vertex_data);
+    }
+  }
+
+  packed_bvh_nodes.resize(bvh_nodes.size());
+  std::transform(
+    bvh_nodes.begin(), bvh_nodes.end(), packed_bvh_nodes.begin(),
+    [] (const BVHNode& node) {
+      PackedBVHNode optimized_node {
+        .aabb_min       = node.aabb.box_min,
+        .left_or_begin  = node.triangle_count > 0 ? node.begin_index : node.left_child_index,
+        .aabb_max       = node.aabb.box_max,
+        .triangle_count = node.triangle_count
+      };
+
+      return optimized_node;
+    }
+  );
 }
 
 void RenderJob::create_input_buffers() {

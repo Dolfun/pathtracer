@@ -35,31 +35,3 @@ struct Scene {
   std::vector<VertexIndices> triangle_indices;
   std::vector<Material> materials;
 };
-
-struct OptimizedScene {
-  struct alignas(16) VertexData {
-    glm::vec4 normal_and_texcoord_u;
-    glm::vec4 tangent_and_texcoord_v;
-    glm::vec3 bitangent;
-    std::int32_t material_index;
-  };
-  static_assert(alignof(VertexData) == 16);
-  static_assert(sizeof(VertexData)  == 48);
-
-  struct alignas(16) OptimizedBVHNode {
-    glm::vec3 aabb_min;
-    std::uint32_t left_or_begin;
-    glm::vec3 aabb_max;
-    std::uint32_t triangle_count;
-  };
-  static_assert(alignof(OptimizedBVHNode) == 16);
-  static_assert(sizeof(OptimizedBVHNode)  == 32);
-
-  std::vector<glm::vec4> vertex_positions;
-  std::vector<VertexData> vertex_data;
-  std::vector<OptimizedBVHNode> bvh_nodes;
-  std::vector<Scene::Material> materials;
-};
-
-struct BVHNode;
-OptimizedScene optimize_scene(const Scene&, const std::vector<BVHNode>&);

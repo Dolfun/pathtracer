@@ -3,7 +3,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_subdirectory(stb)
 add_subdirectory(gltf_loader)
 add_subdirectory(bvh)
-add_subdirectory(scene)
 add_subdirectory(renderer)
 
 add_executable(main main.cc)
@@ -13,6 +12,4 @@ target_link_libraries(
   renderer
   stb
   gltf_loader
-  bvh
-  scene
 )

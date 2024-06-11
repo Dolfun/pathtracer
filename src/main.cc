@@ -6,7 +6,6 @@
 #include "renderer.h"
 #include "timeit.h"
 #include "gltf_loader.h"
-#include "bvh.h"
 #include "scene.h"
 
 int main() {
@@ -40,17 +39,7 @@ int main() {
       scene = load_gltf("sorceress.glb");
     });
 
-    std::vector<BVHNode> bvh_nodes;
-    timeit("Building BVH", [&] {
-      bvh_nodes = build_bvh(scene, 16);
-    });
-
-    OptimizedScene optimized_scene;
-    timeit("Optimizing Scene", [&] {
-      optimized_scene = optimize_scene(scene, bvh_nodes);
-    });
-
-    auto [data, size] = renderer->render(optimized_scene, config);
+    auto [data, size] = renderer->render(scene, config);
 
     std::vector<uint8_t> image(size);
     timeit("std::transform", [&] {

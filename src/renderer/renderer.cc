@@ -143,7 +143,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debug_callback(
 }
 #endif
 
-auto Renderer::render(OptimizedScene& scene, const RenderConfig& config) const
+auto Renderer::render(Scene& scene, const RenderConfig& config) const
     -> std::pair<const float*, std::size_t> {
 
   std::unique_ptr<RenderJob> render_job;

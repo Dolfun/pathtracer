@@ -1,5 +1,5 @@
 #pragma once
-#include "../scene/scene.h"
+#include "../scene.h"
 #include <glm/glm.hpp>
 
 struct AABB {
