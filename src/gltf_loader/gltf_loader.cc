@@ -53,6 +53,9 @@ public:
 private:
   void process_node(const tinygltf::Node&, glm::mat4);
   void process_material(const tinygltf::Material&);
+  void process_image(tinygltf::Image&);
+  void process_sampler(const tinygltf::Sampler&);
+  void process_texture(const tinygltf::Texture&);
 
   template <typename T>
   auto get_attribute_accessor(const tinygltf::Primitive&, const std::string&) const
@@ -101,6 +104,18 @@ void Loader::process() {
 
   for (const auto& material : model.materials) {
     process_material(material);
+  }
+
+  for (auto& image : model.images) {
+    process_image(image);
+  }
+
+  for (const auto& sampler : model.samplers) {
+    process_sampler(sampler);
+  }
+
+  for (const auto& texture : model.textures) {
+    process_texture(texture);
   }
 }
 
@@ -177,6 +192,73 @@ void Loader::process_material(const tinygltf::Material& gltf_material) {
   };
 
   scene.materials.push_back(material);
+}
+
+void Loader::process_image(tinygltf::Image& gltf_image) {
+  assert(gltf_image.pixel_type == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE);
+  assert(gltf_image.bits == 8);
+  assert(gltf_image.component == 4);
+  Scene::Image image {
+    .width = static_cast<std::uint32_t>(gltf_image.width),
+    .height = static_cast<std::uint32_t>(gltf_image.height),
+    .component_count = static_cast<std::uint32_t>(gltf_image.component),
+    .data = std::move(gltf_image.image)
+  };
+
+  scene.images.emplace_back(std::move(image));
+}
+
+void Loader::process_sampler(const tinygltf::Sampler& gltf_sampler) {
+  auto get_filter_type = [] (int filter) {
+    switch (filter) {
+      case TINYGLTF_TEXTURE_FILTER_LINEAR:
+      case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+      case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+        return Scene::SamplerFilter_t::linear;
+
+      case TINYGLTF_TEXTURE_FILTER_NEAREST:
+      case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+      case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+        return Scene::SamplerFilter_t::nearest;
+
+      default:
+        return Scene::SamplerFilter_t::linear;
+    }
+  };
+
+  auto get_wrap_type = [] (int wrap) {
+    switch (wrap) {
+      case TINYGLTF_TEXTURE_WRAP_REPEAT:
+        return Scene::SamplerWarp_t::repeat;
+      
+      case TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT:
+        return Scene::SamplerWarp_t::mirrored_repeat;
+
+      case TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE:
+        return Scene::SamplerWarp_t::clamp_to_edge;
+
+      default:
+        return Scene::SamplerWarp_t::repeat;
+    }
+  };
+
+  Scene::Sampler sampler {
+    .mag_filter = get_filter_type(gltf_sampler.magFilter),
+    .min_filter = get_filter_type(gltf_sampler.minFilter),
+    .wrap_s = get_wrap_type(gltf_sampler.wrapS),
+    .wrap_t = get_wrap_type(gltf_sampler.wrapT)
+  };
+
+  scene.samplers.push_back(sampler);
+}
+
+void Loader::process_texture(const tinygltf::Texture& gltf_texture) {
+  Scene::Texture texture {
+    .sampler_index = gltf_texture.sampler,
+    .image_index = gltf_texture.source
+  };
+
+  scene.textures.push_back(texture);
 }
 
 template <typename T>

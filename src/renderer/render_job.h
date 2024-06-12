@@ -63,10 +63,17 @@ private:
 
   void create_input_buffers();
   void create_output_buffers();
+  void create_images();
+  void stage_input_buffer_data();
+  void stage_image_data();
   void create_descriptor_set();
   void create_pipeline();
   void create_command_buffer();
   void record_command_buffer();
+  void transition_images_for_copy();
+  void copy_input_resources();
+  void dispatch();
+  void copy_output_resources();
 
   const Renderer& renderer;
   const vk::raii::Device& device;
@@ -81,6 +88,11 @@ private:
 
   static constexpr std::uint32_t input_descriptor_count = 4;
   std::array<InputBufferInfo, input_descriptor_count> input_buffer_infos;
+
+  std::uint32_t image_count;
+  std::size_t image_staging_buffer_size;
+  std::vector<vk::raii::Image> images;
+  std::unique_ptr<vk::raii::Buffer> image_staging_buffer;
 
   std::unique_ptr<vk::raii::DescriptorSetLayout> descriptor_set_layout;
   std::unique_ptr<vk::raii::DescriptorPool> descriptor_pool;
