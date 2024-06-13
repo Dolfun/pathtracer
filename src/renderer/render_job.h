@@ -42,6 +42,7 @@ struct PushConstants {
 struct SpecializationConstants {
   std::uint32_t local_size_x;
   std::uint32_t local_size_y;
+  std::uint32_t combined_image_sampler_count;
 };
 
 struct InputBufferInfo {
@@ -60,14 +61,21 @@ private:
 
   template <std::size_t index>
   void add_input_buffer_info(const auto&);
-
   void create_input_buffers();
   void create_output_buffers();
   void create_images();
+  void create_samplers();
+  void create_image_views();
   void stage_input_buffer_data();
   void stage_image_data();
+
+  void create_descriptor_set_layout();
+  void create_descriptor_pool();
   void create_descriptor_set();
+  void update_descriptor_set();
+
   void create_pipeline();
+
   void create_command_buffer();
   void record_command_buffer();
   void transition_images_for_copy();
@@ -86,12 +94,18 @@ private:
   std::vector<PackedVertexData> packed_vertex_data;
   std::vector<PackedBVHNode> packed_bvh_nodes;
 
-  static constexpr std::uint32_t input_descriptor_count = 4;
-  std::array<InputBufferInfo, input_descriptor_count> input_buffer_infos;
+  static constexpr std::uint32_t input_storage_buffer_count = 4;
+  static constexpr std::uint32_t storage_buffer_count = input_storage_buffer_count + 1;
+  static constexpr std::uint32_t descriptor_count = storage_buffer_count + 1;
+  static constexpr std::uint32_t combined_image_sampler_index = descriptor_count - 1;
+  std::array<InputBufferInfo, input_storage_buffer_count> input_buffer_infos;
 
   std::uint32_t image_count;
+  std::uint32_t combined_image_sampler_count;
   std::size_t image_staging_buffer_size;
   std::vector<vk::raii::Image> images;
+  std::vector<vk::raii::Sampler> samplers;
+  std::vector<vk::raii::ImageView> image_views;
   std::unique_ptr<vk::raii::Buffer> image_staging_buffer;
 
   std::unique_ptr<vk::raii::DescriptorSetLayout> descriptor_set_layout;

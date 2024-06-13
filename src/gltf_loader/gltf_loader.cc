@@ -106,14 +106,24 @@ void Loader::process() {
     process_material(material);
   }
 
+  scene.images.reserve(model.images.size());
   for (auto& image : model.images) {
     process_image(image);
   }
 
+  scene.samplers.reserve(model.samplers.size() + 1);
   for (const auto& sampler : model.samplers) {
     process_sampler(sampler);
   }
+  Scene::Sampler default_sampler {
+    .mag_filter = Scene::SamplerFilter_t::linear,
+    .min_filter = Scene::SamplerFilter_t::linear,
+    .wrap_s = Scene::SamplerWarp_t::repeat,
+    .wrap_t = Scene::SamplerWarp_t::repeat,
+  };
+  scene.samplers.push_back(default_sampler);
 
+  scene.textures.reserve(model.textures.size());
   for (const auto& texture : model.textures) {
     process_texture(texture);
   }
@@ -257,6 +267,10 @@ void Loader::process_texture(const tinygltf::Texture& gltf_texture) {
     .sampler_index = gltf_texture.sampler,
     .image_index = gltf_texture.source
   };
+
+  if (texture.sampler_index == -1) {
+    texture.sampler_index = static_cast<int32_t>(model.samplers.size());
+  }
 
   scene.textures.push_back(texture);
 }

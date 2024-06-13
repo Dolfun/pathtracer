@@ -25,11 +25,18 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
   create_input_buffers();
   create_output_buffers();
   create_images();
+  create_samplers();
+
   allocator.allocate_and_bind();
+
+  create_image_views();
   stage_input_buffer_data();
   stage_image_data();
 
+  create_descriptor_set_layout();
+  create_descriptor_pool();
   create_descriptor_set();
+  update_descriptor_set();
   create_pipeline();
 
   create_command_buffer();
@@ -133,7 +140,7 @@ void RenderJob::create_images() {
   for (const auto& image : scene.images) {
     vk::ImageCreateInfo image_create_info {
       .imageType = vk::ImageType::e2D,
-      .format = vk::Format::eR8G8B8A8Srgb,
+      .format = vk::Format::eR8G8B8A8Unorm,
       .extent = {
         .width = image.width,
         .height = image.height,
@@ -166,6 +173,75 @@ void RenderJob::create_images() {
   );
 }
 
+void RenderJob::create_samplers() {
+  auto get_filter_type = [] (Scene::SamplerFilter_t filter) {
+    switch (filter) {
+      case Scene::SamplerFilter_t::linear:
+        return vk::Filter::eLinear;
+
+      case Scene::SamplerFilter_t::nearest:
+        return vk::Filter::eNearest;
+    }
+  };
+
+  auto get_wrap_type = [] (Scene::SamplerWarp_t wrap) {
+    switch (wrap) {
+      case Scene::SamplerWarp_t::repeat:
+        return vk::SamplerAddressMode::eRepeat;
+
+      case Scene::SamplerWarp_t::mirrored_repeat:
+        return vk::SamplerAddressMode::eMirroredRepeat;
+
+      case Scene::SamplerWarp_t::clamp_to_edge:
+        return vk::SamplerAddressMode::eClampToEdge;
+    }
+  };
+
+  combined_image_sampler_count = scene.textures.size();
+
+  samplers.reserve(scene.samplers.size());
+  for (const auto& sampler : scene.samplers) {
+    vk::SamplerCreateInfo create_info {
+      .magFilter = get_filter_type(sampler.mag_filter),
+      .minFilter = get_filter_type(sampler.min_filter),
+      .mipmapMode = vk::SamplerMipmapMode::eLinear,
+      .addressModeU = get_wrap_type(sampler.wrap_s),
+      .addressModeV = get_wrap_type(sampler.wrap_t),
+      .addressModeW = vk::SamplerAddressMode::eRepeat,
+      .mipLodBias = 0.0f,
+      .anisotropyEnable = false,
+      .maxAnisotropy = 0.0f,
+      .compareEnable = false,
+      .compareOp = vk::CompareOp::eAlways,
+      .minLod = 0.0f,
+      .maxLod = 0.0f,
+      .borderColor = vk::BorderColor::eIntOpaqueBlack,
+      .unnormalizedCoordinates = false,
+    };
+
+    samplers.emplace_back(device, create_info);
+  }
+}
+
+void RenderJob::create_image_views() {
+  image_views.reserve(image_count);
+  for (const auto& image : images) {
+    vk::ImageViewCreateInfo image_view_create_info {
+      .image = image,
+      .viewType = vk::ImageViewType::e2D,
+      .format = vk::Format::eR8G8B8A8Unorm,
+      .subresourceRange = {
+        .aspectMask = vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+      }
+    };
+    image_views.emplace_back(device, image_view_create_info);
+  }
+}
+
 void RenderJob::stage_input_buffer_data() {
   auto bind_info = allocator.get_bind_info(*input_staging_buffer).value();
   void* dst_ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, input_buffer_size);
@@ -189,11 +265,9 @@ void RenderJob::stage_image_data() {
   (*device).unmapMemory(bind_info.memory);
 }
 
-void RenderJob::create_descriptor_set() {
-  // Descriptor set layout
-  constexpr std::uint32_t descriptor_count = input_descriptor_count + 1;
+void RenderJob::create_descriptor_set_layout() {
   std::array<vk::DescriptorSetLayoutBinding, descriptor_count> layout_bindings{};
-  for (std::uint32_t i = 0; i < descriptor_count; ++i) {
+  for (std::uint32_t i = 0; i < storage_buffer_count; ++i) {
     layout_bindings[i] = {
       .binding = i,
       .descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -202,28 +276,44 @@ void RenderJob::create_descriptor_set() {
     };
   }
 
+  layout_bindings[combined_image_sampler_index] = 
+    vk::DescriptorSetLayoutBinding {
+      .binding = combined_image_sampler_index,
+      .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+      .descriptorCount = combined_image_sampler_count,
+      .stageFlags = vk::ShaderStageFlagBits::eCompute
+  };
+
   vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
     .bindingCount = static_cast<std::uint32_t>(layout_bindings.size()),
     .pBindings = layout_bindings.data()
   };
   descriptor_set_layout = 
     std::make_unique<vk::raii::DescriptorSetLayout>(device, descriptor_set_layout_create_info);
+}
 
-  // Descriptor pool
-  vk::DescriptorPoolSize pool_size {
+void RenderJob::create_descriptor_pool() {
+  std::array<vk::DescriptorPoolSize, 2> pool_sizes{};
+  pool_sizes[0] = vk::DescriptorPoolSize {
     .type = vk::DescriptorType::eStorageBuffer,
     .descriptorCount = descriptor_count
+  };
+
+  pool_sizes[1] = vk::DescriptorPoolSize {
+    .type = vk::DescriptorType::eCombinedImageSampler,
+    .descriptorCount = combined_image_sampler_count
   };
 
   vk::DescriptorPoolCreateInfo pool_create_info {
     .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
     .maxSets = 1,
-    .poolSizeCount = 1,
-    .pPoolSizes = &pool_size
+    .poolSizeCount = 2,
+    .pPoolSizes = pool_sizes.data()
   };
   descriptor_pool = std::make_unique<vk::raii::DescriptorPool>(device, pool_create_info);
+}
 
-  // Descriptor set
+void RenderJob::create_descriptor_set() {
   vk::DescriptorSetAllocateInfo allocate_info {
     .descriptorPool = *descriptor_pool,
     .descriptorSetCount = 1,
@@ -231,11 +321,12 @@ void RenderJob::create_descriptor_set() {
   };
   vk::raii::DescriptorSets descriptor_sets { device, allocate_info };
   descriptor_set = std::make_unique<vk::raii::DescriptorSet>(std::move(descriptor_sets.front()));
+}
 
-  // Descriptor Writes
-  std::array<vk::DescriptorBufferInfo, descriptor_count> descriptor_buffer_infos{};
+void RenderJob::update_descriptor_set() {
+  std::array<vk::DescriptorBufferInfo, storage_buffer_count> descriptor_buffer_infos{};
   std::size_t offset = 0;
-  for (std::uint32_t i = 0; i < input_descriptor_count; ++i) {
+  for (std::uint32_t i = 0; i < input_storage_buffer_count; ++i) {
     descriptor_buffer_infos[i] = vk::DescriptorBufferInfo {
       .buffer = **input_buffer,
       .offset = offset,
@@ -250,8 +341,19 @@ void RenderJob::create_descriptor_set() {
     .range  = output_buffer_size
   };
 
+  std::vector<vk::DescriptorImageInfo> descriptor_image_infos;
+  descriptor_image_infos.reserve(combined_image_sampler_count);
+  for (auto [sampler_index, image_index] : scene.textures) {
+    vk::DescriptorImageInfo descriptor_image_info {
+      .sampler = samplers[sampler_index],
+      .imageView = image_views[image_index],
+      .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+    };
+    descriptor_image_infos.push_back(descriptor_image_info);
+  }
+
   std::array<vk::WriteDescriptorSet, descriptor_count> descriptor_writes{};
-  for (std::uint32_t i = 0; i < descriptor_count; ++i) {
+  for (std::uint32_t i = 0; i < storage_buffer_count; ++i) {
     descriptor_writes[i] = {
       .dstSet = *descriptor_set,
       .dstBinding = i,
@@ -261,6 +363,16 @@ void RenderJob::create_descriptor_set() {
       .pBufferInfo = &descriptor_buffer_infos[i]
     };
   }
+
+  descriptor_writes[combined_image_sampler_index] = vk::WriteDescriptorSet {
+    .dstSet = *descriptor_set,
+    .dstBinding = combined_image_sampler_index,
+    .dstArrayElement = 0,
+    .descriptorCount = combined_image_sampler_count,
+    .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+    .pImageInfo = descriptor_image_infos.data()
+  };
+
   device.updateDescriptorSets(descriptor_writes, {});
 }
 
@@ -273,26 +385,34 @@ void RenderJob::create_pipeline() {
   };
   vk::raii::ShaderModule shader_module { device, shader_module_create_info };
 
-  vk::SpecializationMapEntry specialization_map_entries[2];
+  std::array<vk::SpecializationMapEntry, 3> specialization_map_entries{};
   specialization_map_entries[0] = vk::SpecializationMapEntry {
     .constantID = 0,
     .offset = offsetof(SpecializationConstants, local_size_x),
     .size = sizeof(SpecializationConstants::local_size_x)
   };
+
   specialization_map_entries[1] = vk::SpecializationMapEntry {
     .constantID = 1,
     .offset = offsetof(SpecializationConstants, local_size_y),
     .size = sizeof(SpecializationConstants::local_size_y)
   };
 
+  specialization_map_entries[2] = vk::SpecializationMapEntry {
+    .constantID = 2,
+    .offset = offsetof(SpecializationConstants, combined_image_sampler_count),
+    .size = sizeof(SpecializationConstants::combined_image_sampler_count)
+  };
+
   specialization_constants = {
     .local_size_x = 32,
-    .local_size_y = 32
+    .local_size_y = 32,
+    .combined_image_sampler_count = combined_image_sampler_count
   };
 
   vk::SpecializationInfo specialization_info {
-    .mapEntryCount = 2,
-    .pMapEntries = specialization_map_entries,
+    .mapEntryCount = static_cast<std::uint32_t>(specialization_map_entries.size()),
+    .pMapEntries = specialization_map_entries.data(),
     .dataSize = sizeof(SpecializationConstants),
     .pData = &specialization_constants
   };
@@ -475,7 +595,8 @@ void RenderJob::dispatch() {
     *pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
 
-  auto [local_size_x, local_size_y] = specialization_constants;
+  std::uint32_t local_size_x = specialization_constants.local_size_x;
+  std::uint32_t local_size_y = specialization_constants.local_size_y;
   std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;
   std::uint32_t global_size_y = (config.image_width  + local_size_y - 1) / local_size_y;
   command_buffer->dispatch(global_size_x, global_size_y, 1);

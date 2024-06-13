@@ -69,6 +69,9 @@ layout (set = 0, binding = 4) writeonly buffer result_ssbo {
   vec4 result[];
 };
 
+layout(constant_id = 2) const uint sampler_size = 1;
+layout(binding = 5) uniform sampler2D samplers[sampler_size];
+
 layout (push_constant) uniform constant {
   Camera camera;
   uint image_width, image_height;
@@ -197,6 +200,7 @@ void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
 }
 
 // <-------------------------------Ray-color---------------------------------->
+const float gamma = 2.2;
 vec3 get_ray_color(const Ray ray) {
   vec3 color = bg_color;
 
@@ -209,13 +213,17 @@ vec3 get_ray_color(const Ray ray) {
     float u = intersection.u;
     float v = intersection.v;
     float w = 1.0 - u - v;
-    vec3 normal = normalize(
-      w * triangle.v[0].normal +
-      u * triangle.v[1].normal +
-      v * triangle.v[2].normal
-    );
 
-    color = 0.5 * (1.0 + normal);
+    vec2 texcoords[3];
+    for (int i = 0; i < 3; ++i) {
+      texcoords[i] = vec2(triangle.v[i].texcoord_u, triangle.v[i].texcoord_v);
+    }
+    vec2 texcoord = w * texcoords[0] + u * texcoords[1] + v * texcoords[2];
+
+    Material material = materials[triangle.v[0].material_index];
+    vec4 base_color = texture(samplers[material.base_color_texture_index], texcoord);
+    base_color.rgb = pow(base_color.rgb, vec3(gamma));
+    color = base_color.rgb;
   }
 
   return color;
@@ -236,6 +244,8 @@ void main() {
     color += get_ray_color(ray);
   }
   color /= sample_count;
+
+  color.rgb = pow(color.rgb, vec3(1.0 / gamma));
 
   result[index] = vec4(color, 1.0f);
 }
