@@ -39,15 +39,15 @@ struct PushConstants {
   glm::vec3 bg_color;
 };
 
-struct SpecializationConstants {
-  std::uint32_t local_size_x;
-  std::uint32_t local_size_y;
-  std::uint32_t combined_image_sampler_count;
-};
-
-struct InputBufferInfo {
+struct BufferInfo {
   const void* ptr;
   std::size_t size;
+};
+
+struct BufferCreateInfo {
+  std::size_t size;
+  vk::BufferUsageFlags usage;
+  vk::MemoryPropertyFlags memory_flags;
 };
 
 class RenderJob {
@@ -60,13 +60,19 @@ private:
   void process_scene();
 
   template <std::size_t index>
-  void add_input_buffer_info(const auto&);
-  void create_input_buffers();
-  void create_output_buffers();
+  void add_input_storage_buffer_info(const auto&);
+  template <std::size_t index>
+  void add_uniform_buffer_info(const auto&);
+
+  auto create_buffer(const BufferCreateInfo&) 
+    -> std::unique_ptr<vk::raii::Buffer>;
+  void create_buffers();
   void create_images();
   void create_samplers();
   void create_image_views();
-  void stage_input_buffer_data();
+
+  void stage_input_storage_buffer_data();
+  void copy_uniform_buffer_data();
   void stage_image_data();
 
   void create_descriptor_set_layout();
@@ -94,11 +100,22 @@ private:
   std::vector<PackedVertexData> packed_vertex_data;
   std::vector<PackedBVHNode> packed_bvh_nodes;
 
-  static constexpr std::uint32_t input_storage_buffer_count = 4;
+  static constexpr std::uint32_t input_storage_buffer_count = 3;
   static constexpr std::uint32_t storage_buffer_count = input_storage_buffer_count + 1;
-  static constexpr std::uint32_t descriptor_count = storage_buffer_count + 1;
-  static constexpr std::uint32_t combined_image_sampler_index = descriptor_count - 1;
-  std::array<InputBufferInfo, input_storage_buffer_count> input_buffer_infos;
+  static constexpr std::uint32_t uniform_buffer_count = 1;
+  static constexpr std::uint32_t descriptor_count = storage_buffer_count + uniform_buffer_count + 1;
+  std::array<BufferInfo, input_storage_buffer_count> input_storage_buffer_infos;
+  std::array<BufferInfo, uniform_buffer_count> uniform_buffer_infos;
+
+  std::size_t input_storage_buffer_size;
+  std::unique_ptr<vk::raii::Buffer> input_storage_buffer, input_staging_buffer;
+
+  std::size_t output_image_pixel_count;
+  std::size_t output_storage_buffer_size;
+  std::unique_ptr<vk::raii::Buffer> output_storage_buffer, output_unstaging_buffer;
+
+  std::size_t uniform_buffer_size;
+  std::unique_ptr<vk::raii::Buffer> uniform_buffer;
 
   std::uint32_t image_count;
   std::uint32_t combined_image_sampler_count;
@@ -112,24 +129,27 @@ private:
   std::unique_ptr<vk::raii::DescriptorPool> descriptor_pool;
   std::unique_ptr<vk::raii::DescriptorSet> descriptor_set;
 
-  SpecializationConstants specialization_constants;
+  static constexpr std::uint32_t specialization_constant_count = 4;
+  using SpecializationConstant_t = std::uint32_t;
+  std::array<SpecializationConstant_t, specialization_constant_count> specialization_constants;
   std::unique_ptr<vk::raii::PipelineLayout> pipeline_layout;
   std::unique_ptr<vk::raii::Pipeline> pipeline;
 
   std::unique_ptr<vk::raii::CommandPool> command_pool;
   std::unique_ptr<vk::raii::CommandBuffer> command_buffer;
-
-  std::size_t input_buffer_size;
-  std::unique_ptr<vk::raii::Buffer> input_buffer, input_staging_buffer;
-
-  std::size_t output_image_pixel_count;
-  std::size_t output_buffer_size;
-  std::unique_ptr<vk::raii::Buffer> output_buffer, output_unstaging_buffer;
 };
 
 template <std::size_t index>
-void RenderJob::add_input_buffer_info(const auto& v) {
-  input_buffer_infos[index] = InputBufferInfo {
+void RenderJob::add_input_storage_buffer_info(const auto& v) {
+  input_storage_buffer_infos[index] = BufferInfo {
+    .ptr  = static_cast<const void*>(v.data()),
+    .size = v.size() * sizeof(v[0])
+  };
+}
+
+template <std::size_t index>
+void RenderJob::add_uniform_buffer_info(const auto& v) {
+  uniform_buffer_infos[index] = BufferInfo {
     .ptr  = static_cast<const void*>(v.data()),
     .size = v.size() * sizeof(v[0])
   };

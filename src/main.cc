@@ -54,6 +54,9 @@ int main() {
 
     fmt::println("\nTriangle Count: {}", scene.triangle_indices.size());
     fmt::println("Material Count: {}", scene.materials.size());
+    fmt::println("Image Count: {}", scene.images.size());
+    fmt::println("Sampler Count: {}", scene.samplers.size());
+    fmt::println("Texture Count: {}", scene.textures.size());
     
   } catch (const std::exception& e) {
     fmt::println("Exception Occured: {}", e.what());

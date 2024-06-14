@@ -49,27 +49,28 @@ struct Camera {
 
 // <------------------------------Descriptors--------------------------------->
 
-layout (set = 0, binding = 0) buffer triangle_pos_ssbo {
-  TrianglePos triangle_pos[];
-};
-
-layout (set = 0, binding = 1) readonly buffer triangle_data_ssbo {
-  TriangleData triangle_data[];
-};
-
-layout (set = 0, binding = 2) readonly buffer bvh_ssbo {
-  BVHNode bvh_nodes[];
-};
-
-layout (set = 0, binding = 3) readonly buffer material_ssbo {
-  Material materials[];
-};
-
-layout (set = 0, binding = 4) writeonly buffer result_ssbo {
+layout (set = 0, binding = 0) writeonly buffer result_ssbo {
   vec4 result[];
 };
 
-layout(constant_id = 2) const uint sampler_size = 1;
+layout (set = 0, binding = 1) buffer triangle_pos_ssbo {
+  TrianglePos triangle_pos[];
+};
+
+layout (set = 0, binding = 2) readonly buffer triangle_data_ssbo {
+  TriangleData triangle_data[];
+};
+
+layout (set = 0, binding = 3) readonly buffer bvh_ssbo {
+  BVHNode bvh_nodes[];
+};
+
+layout(constant_id = 2) const uint material_count = 1;
+layout (set = 0, binding = 4) uniform material_ubo {
+  Material materials[material_count];
+};
+
+layout(constant_id = 3) const uint sampler_size = 1;
 layout(binding = 5) uniform sampler2D samplers[sampler_size];
 
 layout (push_constant) uniform constant {
@@ -81,6 +82,7 @@ layout (push_constant) uniform constant {
 };
 
 // <----------------------------------RNG------------------------------------->
+
 // https://nullprogram.com/blog/2018/07/31/
 void triple32(inout uint x) {
   x ^= x >> 17;
@@ -99,6 +101,7 @@ float rand_float() {
 }
 
 // <----------------------------------Ray------------------------------------->
+
 struct Ray {
   vec3 origin;
   vec3 dir;
@@ -117,6 +120,7 @@ Ray get_ray_through_pixel(const uint x, const uint y) {
 }
 
 // <-------------------------Ray-AABB-Intersection---------------------------->
+
 const float INFINITY = 1.0 / 0.0;
 float ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max) {
   vec3 inv_dir = 1.0 / ray.dir;
@@ -130,6 +134,7 @@ float ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max
 }
 
 // <---------------------Ray-Triangle-Intersection---------------------------->
+
 struct Intersection {
   float t;
   float u, v;
@@ -168,6 +173,7 @@ void ray_triangle_intersect(
 }
 
 // <-------------------------Ray-Scene-Intersection--------------------------->
+
 #define STACK_SIZE 64
 uint stack[STACK_SIZE];
 void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
@@ -200,6 +206,7 @@ void ray_scene_intersect(const Ray ray, inout Intersection intersection) {
 }
 
 // <-------------------------------Ray-color---------------------------------->
+
 const float gamma = 2.2;
 vec3 get_ray_color(const Ray ray) {
   vec3 color = bg_color;
@@ -230,6 +237,7 @@ vec3 get_ray_color(const Ray ray) {
 }
 
 // <---------------------------------Main------------------------------------->
+
 void main() {
   uint id_x = gl_GlobalInvocationID.y;
   uint id_y = gl_GlobalInvocationID.x;
