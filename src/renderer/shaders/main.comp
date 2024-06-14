@@ -1,5 +1,13 @@
 #version 460
+
+// <----------------------Specialization Constants---------------------------->
+
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
+layout(constant_id = 2) const uint material_count = 1;
+layout(constant_id = 3) const uint directional_light_count = 1;
+layout(constant_id = 4) const uint point_light_count = 1;
+layout(constant_id = 5) const uint sampler_size = 1;
+
 
 // <--------------------------------Structs----------------------------------->
 
@@ -41,6 +49,19 @@ struct Material {
   int emissive_texture_index;
 };
 
+struct DirectionalLight {
+  vec3 direction;
+  float intensity;
+  vec3 color;
+};
+
+struct PointLight {
+  vec3 position;
+  float range;
+  vec3 color;
+  float intensity;
+};
+
 struct Camera {
   vec3 position;
   vec3 pixel_delta_u, pixel_delta_v;
@@ -65,13 +86,19 @@ layout (set = 0, binding = 3) readonly buffer bvh_ssbo {
   BVHNode bvh_nodes[];
 };
 
-layout(constant_id = 2) const uint material_count = 1;
 layout (set = 0, binding = 4) uniform material_ubo {
   Material materials[material_count];
 };
 
-layout(constant_id = 3) const uint sampler_size = 1;
-layout(binding = 5) uniform sampler2D samplers[sampler_size];
+layout (set = 0, binding = 5) uniform directional_light_ubo {
+  DirectionalLight directional_lights[directional_light_count + 1];
+};
+
+layout (set = 0, binding = 6) uniform point_light_ubo {
+  PointLight point_lights[point_light_count + 1];
+};
+
+layout(binding = 7) uniform sampler2D samplers[sampler_size];
 
 layout (push_constant) uniform constant {
   Camera camera;
@@ -228,9 +255,13 @@ vec3 get_ray_color(const Ray ray) {
     vec2 texcoord = w * texcoords[0] + u * texcoords[1] + v * texcoords[2];
 
     Material material = materials[triangle.v[0].material_index];
-    vec4 base_color = texture(samplers[material.base_color_texture_index], texcoord);
-    base_color.rgb = pow(base_color.rgb, vec3(gamma));
-    color = base_color.rgb;
+    color = material.base_color_factor.rgb;
+
+    if (material.base_color_texture_index != -1) {
+      vec4 base_color = texture(samplers[material.base_color_texture_index], texcoord);
+      base_color.rgb = pow(base_color.rgb, vec3(gamma));
+      color *= base_color.rgb;
+    }
   }
 
   return color;

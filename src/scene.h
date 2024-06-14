@@ -53,6 +53,19 @@ struct Scene {
     std::int32_t sampler_index;
     std::int32_t image_index;
   };
+
+  struct alignas(16) DirectionalLight {
+    glm::vec3 direction;
+    float intensity;
+    glm::vec3 color;
+  };
+
+  struct alignas(16) PointLight {
+    glm::vec3 position;
+    float range;
+    glm::vec3 color;
+    float intensity;
+  };
   
   std::vector<Vertex> vertices;
   std::vector<VertexIndices> triangle_indices;
@@ -60,4 +73,6 @@ struct Scene {
   std::vector<Image> images;
   std::vector<Sampler> samplers;
   std::vector<Texture> textures;
+  std::vector<DirectionalLight> directional_lights;
+  std::vector<PointLight> point_lights;
 };

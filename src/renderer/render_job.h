@@ -102,7 +102,7 @@ private:
 
   static constexpr std::uint32_t input_storage_buffer_count = 3;
   static constexpr std::uint32_t storage_buffer_count = input_storage_buffer_count + 1;
-  static constexpr std::uint32_t uniform_buffer_count = 1;
+  static constexpr std::uint32_t uniform_buffer_count = 3;
   static constexpr std::uint32_t descriptor_count = storage_buffer_count + uniform_buffer_count + 1;
   std::array<BufferInfo, input_storage_buffer_count> input_storage_buffer_infos;
   std::array<BufferInfo, uniform_buffer_count> uniform_buffer_infos;
@@ -129,7 +129,7 @@ private:
   std::unique_ptr<vk::raii::DescriptorPool> descriptor_pool;
   std::unique_ptr<vk::raii::DescriptorSet> descriptor_set;
 
-  static constexpr std::uint32_t specialization_constant_count = 4;
+  static constexpr std::uint32_t specialization_constant_count = 6;
   using SpecializationConstant_t = std::uint32_t;
   std::array<SpecializationConstant_t, specialization_constant_count> specialization_constants;
   std::unique_ptr<vk::raii::PipelineLayout> pipeline_layout;

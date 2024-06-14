@@ -9,6 +9,32 @@
 #define TINYGLTF_IMPLEMENTATION
 #include <tiny_gltf.h>
 
+constexpr Scene::Material default_material {
+  .base_color_factor = glm::vec4(0.25f, 0.25f, 0.25f, 1.0f),
+  .base_color_texture_index = -1,
+  .metallic_factor = 0.0f,
+  .roughness_factor = 1.0f,
+  .metallic_roughness_texture_index = -1,
+  .occlusion_strength = 0.0f,
+  .occlusion_texture_index = -1,
+  .emissive_factor = glm::vec3(0.0f),
+  .emissive_texture_index = -1
+};
+
+constexpr Scene::Sampler default_sampler {
+  .mag_filter = Scene::SamplerFilter_t::linear,
+  .min_filter = Scene::SamplerFilter_t::linear,
+  .wrap_s = Scene::SamplerWarp_t::repeat,
+  .wrap_t = Scene::SamplerWarp_t::repeat,
+};
+
+const Scene::Image default_image {
+  .width = 16,
+  .height = 16,
+  .component_count = 4,
+  .data = std::vector<unsigned char>(16 * 16 * 4),
+};
+
 template <typename T>
 class AccessorHelper {
 public:
@@ -66,6 +92,8 @@ private:
 
   void process_primitive(const tinygltf::Primitive&, const glm::mat4&);
 
+  void process_light(const tinygltf::Light&, const glm::mat4&);
+
   Scene& scene;
   tinygltf::Model model;
   std::uint32_t index_offset;
@@ -102,6 +130,8 @@ void Loader::process() {
     process_node(model.nodes[i], transform);
   }
 
+  scene.materials.reserve(model.materials.size() + 1);
+  scene.materials.push_back(default_material);
   for (const auto& material : model.materials) {
     process_material(material);
   }
@@ -111,22 +141,27 @@ void Loader::process() {
     process_image(image);
   }
 
+  if (scene.images.empty()) {
+    scene.images.push_back(default_image);
+  }
+
   scene.samplers.reserve(model.samplers.size() + 1);
+  scene.samplers.push_back(default_sampler);
   for (const auto& sampler : model.samplers) {
     process_sampler(sampler);
   }
-  Scene::Sampler default_sampler {
-    .mag_filter = Scene::SamplerFilter_t::linear,
-    .min_filter = Scene::SamplerFilter_t::linear,
-    .wrap_s = Scene::SamplerWarp_t::repeat,
-    .wrap_t = Scene::SamplerWarp_t::repeat,
-  };
-  scene.samplers.push_back(default_sampler);
 
   scene.textures.reserve(model.textures.size());
   for (const auto& texture : model.textures) {
     process_texture(texture);
   }
+
+  if (scene.textures.empty()) {
+    scene.textures.emplace_back();
+  }
+
+  scene.directional_lights.emplace_back();
+  scene.point_lights.emplace_back();
 }
 
 void Loader::process_node(const tinygltf::Node& node, glm::mat4 transform) {
@@ -159,6 +194,10 @@ void Loader::process_node(const tinygltf::Node& node, glm::mat4 transform) {
         process_primitive(primitive, transform);
       }
     }
+  }
+
+  if (node.light != -1) {
+    process_light(model.lights[node.light], transform);
   }
 
   for (auto i : node.children) {
@@ -264,13 +303,9 @@ void Loader::process_sampler(const tinygltf::Sampler& gltf_sampler) {
 
 void Loader::process_texture(const tinygltf::Texture& gltf_texture) {
   Scene::Texture texture {
-    .sampler_index = gltf_texture.sampler,
+    .sampler_index = gltf_texture.sampler + 1,
     .image_index = gltf_texture.source
   };
-
-  if (texture.sampler_index == -1) {
-    texture.sampler_index = static_cast<int32_t>(model.samplers.size());
-  }
 
   scene.textures.push_back(texture);
 }
@@ -328,7 +363,7 @@ void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::
       .position = glm::vec3(transform * glm::vec4(positions[i], 1.0f)),
       .normal = glm::normalize(glm::vec3(normal_transform * normals[i])),
       .texcoord = tex_coords[i],
-      .material_index = primitive.material
+      .material_index = primitive.material + 1
     };
 
     if (!tangents.empty()) {
@@ -355,6 +390,34 @@ void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::
   }
 
   index_offset += vertex_count;
+}
+
+void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transform) {
+  glm::vec3 color = { light.color[0], light.color[1], light.color[2] };
+
+  if (light.type == "directional") {
+    glm::vec3 local_direction = glm::vec3(0.0f, 0.0f, -1.0f);
+
+    Scene::DirectionalLight directional_light {
+      .direction = glm::vec3(transform * glm::vec4(local_direction, 0.0f)),
+      .intensity = static_cast<float>(light.intensity),
+      .color = color
+    };
+
+    scene.directional_lights.push_back(directional_light);
+
+  } else if (light.type == "point") {
+    glm::vec3 position = transform[3];
+
+    Scene::PointLight point_light {
+      .position = position,
+      .range = static_cast<float>(light.range),
+      .color = color,
+      .intensity = static_cast<float>(light.intensity)
+    };
+
+    scene.point_lights.push_back(point_light);
+  }
 }
 
 Scene load_gltf(const std::string& path) {

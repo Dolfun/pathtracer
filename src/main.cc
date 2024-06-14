@@ -57,6 +57,8 @@ int main() {
     fmt::println("Image Count: {}", scene.images.size());
     fmt::println("Sampler Count: {}", scene.samplers.size());
     fmt::println("Texture Count: {}", scene.textures.size());
+    fmt::println("Directional Light Count: {}", scene.directional_lights.size() - 1);
+    fmt::println("Point Light Count: {}", scene.point_lights.size() - 1);
     
   } catch (const std::exception& e) {
     fmt::println("Exception Occured: {}", e.what());

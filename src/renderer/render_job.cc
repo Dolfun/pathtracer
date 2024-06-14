@@ -27,6 +27,8 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
   add_input_storage_buffer_info<2>(packed_bvh_nodes);
   
   add_uniform_buffer_info<0>(scene.materials);
+  add_uniform_buffer_info<1>(scene.directional_lights);
+  add_uniform_buffer_info<2>(scene.point_lights);
   
   create_buffers();
   create_images();
@@ -442,7 +444,9 @@ void RenderJob::create_pipeline() {
   specialization_constants[0] = local_size_x;
   specialization_constants[1] = local_size_y;
   specialization_constants[2] = static_cast<std::uint32_t>(scene.materials.size());
-  specialization_constants[3] = combined_image_sampler_count;
+  specialization_constants[3] = static_cast<std::uint32_t>(scene.directional_lights.size() - 1);
+  specialization_constants[4] = static_cast<std::uint32_t>(scene.directional_lights.size() - 1);
+  specialization_constants[5] = combined_image_sampler_count;
   
   std::array<vk::SpecializationMapEntry, specialization_constant_count> specialization_map_entries{};
   for (std::uint32_t i = 0; i < specialization_constant_count; ++i) {
