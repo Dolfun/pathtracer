@@ -89,7 +89,12 @@ void Renderer::create_logical_device() {
     .pQueuePriorities = &queue_priority,
   };
 
+  vk::PhysicalDeviceMaintenance4Features maintenance4_features {
+    .maintenance4 = true,
+  };
+
   vk::PhysicalDeviceSynchronization2Features sync2_features {
+    .pNext = &maintenance4_features,
     .synchronization2 = true,
   };
 
@@ -137,7 +142,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debug_callback(
   }
 
   std::string error = fmt::format("[[{}]] {}\n", data->pMessageIdName, data->pMessage);
-  fmt::print(fmt::fg(color), "{}", error);
+  fmt::print(fmt::fg(color), "{}\n", error);
 
   return VK_FALSE;
 }

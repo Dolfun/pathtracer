@@ -64,6 +64,7 @@ void RenderJob::process_scene() {
       );
 
       PackedVertexData vertex_data {
+        .position = glm::vec4(vertex.position, 0.0f),
         .normal_and_texcoord_u = glm::vec4(vertex.normal, vertex.texcoord.x),
         .tangent_and_texcoord_v = glm::vec4(vertex.tangent, vertex.texcoord.y),
         .bitangent = vertex.bitangnet,
@@ -126,7 +127,7 @@ void RenderJob::create_buffers() {
   });
 
   // Output Storage Buffer
-  output_image_pixel_count = config.image_width * config.image_height;
+  output_image_pixel_count = config.resolution_x * config.resolution_y;
   output_storage_buffer_size = output_image_pixel_count * NR_CHANNELS * sizeof(float);
 
   output_storage_buffer = create_buffer({
@@ -445,7 +446,7 @@ void RenderJob::create_pipeline() {
   specialization_constants[1] = local_size_y;
   specialization_constants[2] = static_cast<std::uint32_t>(scene.materials.size());
   specialization_constants[3] = static_cast<std::uint32_t>(scene.directional_lights.size() - 1);
-  specialization_constants[4] = static_cast<std::uint32_t>(scene.directional_lights.size() - 1);
+  specialization_constants[4] = static_cast<std::uint32_t>(scene.point_lights.size() - 1);
   specialization_constants[5] = combined_image_sampler_count;
   
   std::array<vk::SpecializationMapEntry, specialization_constant_count> specialization_map_entries{};
@@ -496,7 +497,6 @@ void RenderJob::create_pipeline() {
 
 void RenderJob::create_command_buffer() {
   vk::CommandPoolCreateInfo pool_create_info {
-    .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
     .queueFamilyIndex = renderer.compute_family_index.value()
   };
 
@@ -513,7 +513,7 @@ void RenderJob::create_command_buffer() {
 }
 
 void RenderJob::record_command_buffer() {
-  command_buffer->reset();
+  command_pool->reset();
 
   vk::CommandBufferBeginInfo begin_info {
     .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -648,8 +648,8 @@ void RenderJob::dispatch() {
     *pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
 
-  std::uint32_t global_size_x = (config.image_height + local_size_x - 1) / local_size_x;
-  std::uint32_t global_size_y = (config.image_width  + local_size_y - 1) / local_size_y;
+  std::uint32_t global_size_x = (config.resolution_y + local_size_x - 1) / local_size_x;
+  std::uint32_t global_size_y = (config.resolution_x + local_size_y - 1) / local_size_y;
 
   command_buffer->dispatch(global_size_x, global_size_y, 1);
 }
@@ -703,12 +703,12 @@ auto RenderJob::render() const -> std::pair<const float*, std::size_t> {
 }
 
 PushConstants::PushConstants(const RenderConfig& config) :
-    image_width { config.image_width }, image_height { config.image_height },
+    resolution_x { config.resolution_x }, resolution_y { config.resolution_y },
     seed { config.seed }, sample_count { config.sample_count },
     bg_color { config.bg_color } {
 
-  float image_width = static_cast<float>(config.image_width);
-  float image_height = static_cast<float>(config.image_height);
+  float resolution_x = static_cast<float>(config.resolution_x);
+  float resolution_y = static_cast<float>(config.resolution_y);
   const auto& camera = config.camera;
 
   glm::vec3 w = glm::normalize(camera.position - camera.lookat);
@@ -718,12 +718,12 @@ PushConstants::PushConstants(const RenderConfig& config) :
   float focal_length = glm::length(camera.position - camera.lookat);
   float theta = glm::radians(camera.vertical_fov);
   float viewport_height = 2.0f * glm::tan(theta / 2.0f) * focal_length;
-  float viewport_width = viewport_height * image_width / image_height;
+  float viewport_width = viewport_height * resolution_x / resolution_y;
 
   glm::vec3 viewport_u = viewport_width * u;
   glm::vec3 viewport_v = viewport_height * -v;
-  glm::vec3 pixel_delta_u = viewport_u / image_width;
-  glm::vec3 pixel_delta_v = viewport_v / image_height;
+  glm::vec3 pixel_delta_u = viewport_u / resolution_x;
+  glm::vec3 pixel_delta_v = viewport_v / resolution_y;
   glm::vec3 viewport_upper_left = camera.position - focal_length * w - 0.5f * (viewport_u + viewport_v);
   glm::vec3 corner_pixel_pos = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
 

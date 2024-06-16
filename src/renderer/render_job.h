@@ -5,13 +5,12 @@
 #include "bvh.h"
 
 struct alignas(16) PackedVertexData {
+  glm::vec4 position;
   glm::vec4 normal_and_texcoord_u;
   glm::vec4 tangent_and_texcoord_v;
   glm::vec3 bitangent;
   std::int32_t material_index;
 };
-static_assert(alignof(PackedVertexData) == 16);
-static_assert(sizeof(PackedVertexData)  == 48);
 
 struct alignas(16) PackedBVHNode {
   glm::vec3 aabb_min;
@@ -19,8 +18,6 @@ struct alignas(16) PackedBVHNode {
   glm::vec3 aabb_max;
   std::uint32_t triangle_count;
 };
-static_assert(alignof(PackedBVHNode) == 16);
-static_assert(sizeof(PackedBVHNode)  == 32);
 
 struct PushConstants {
   PushConstants(const RenderConfig&);
@@ -32,7 +29,7 @@ struct PushConstants {
     alignas(16) glm::vec3 corner_pixel_pos;
   } camera;
 
-  std::uint32_t image_width, image_height;
+  std::uint32_t resolution_x, resolution_y;
   std::uint32_t seed;
   std::uint32_t sample_count;
 

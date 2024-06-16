@@ -14,7 +14,7 @@
 #define NR_CHANNELS 4
 
 struct RenderConfig {
-  std::uint32_t image_width, image_height;
+  std::uint32_t resolution_x, resolution_y;
   std::uint32_t seed;
   std::uint32_t sample_count;
   glm::vec3 bg_color;

@@ -21,8 +21,8 @@ int main() {
     std::uniform_int_distribution<std::uint32_t> dist;
 
     RenderConfig config {
-      .image_width = 1080,
-      .image_height = 1920,
+      .resolution_x = 1080,
+      .resolution_y = 1920,
       .seed = dist(engine),
       .sample_count = 128,
       .bg_color = { 0.1, 0.1, 0.1 },
@@ -49,7 +49,7 @@ int main() {
     });
     
     timeit("stbi_write_bmp", [&] {
-      stbi_write_bmp("output.bmp", config.image_width, config.image_height, NR_CHANNELS, image.data());
+      stbi_write_bmp("output.bmp", config.resolution_x, config.resolution_y, NR_CHANNELS, image.data());
     });
 
     fmt::println("\nTriangle Count: {}", scene.triangle_indices.size());

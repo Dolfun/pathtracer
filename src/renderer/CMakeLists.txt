@@ -31,7 +31,12 @@ foreach(SHADER_SOURCE ${SHADER_SOURCES})
 
   add_custom_command(
     OUTPUT ${SHADER_OUTPUT_PATH}
-    COMMAND ${GLSLC} ${SHADER_SOURCE_PATH} -o ${SHADER_OUTPUT_PATH}
+    COMMAND 
+      ${GLSLC} 
+      ${SHADER_SOURCE_PATH} 
+      -O
+      --target-env=vulkan1.3
+      -o ${SHADER_OUTPUT_PATH}
     DEPENDS ${SHADER_SOURCE_PATH}
     VERBATIM
     COMMENT "Compiling ${SHADER_SOURCE}"

@@ -28,12 +28,29 @@ constexpr Scene::Sampler default_sampler {
   .wrap_t = Scene::SamplerWarp_t::repeat,
 };
 
-const Scene::Image default_image {
-  .width = 16,
-  .height = 16,
-  .component_count = 4,
-  .data = std::vector<unsigned char>(16 * 16 * 4),
-};
+const Scene::Image default_image = [] {
+  constexpr std::uint32_t size = 64;
+
+  Scene::Image image {
+    .width = size,
+    .height = size,
+    .component_count = 4,
+  };
+
+  image.data.assign(size * size * 4, 255);
+  for (std::uint32_t i = 0; i < size; ++i) {
+    for (std::uint32_t j = 0; j < size; ++j) {
+      if ((i + j) % 2 == 0) {
+        std::uint32_t index = i * size + j;
+        image.data[4 * index + 0] = 0;
+        image.data[4 * index + 1] = 0;
+        image.data[4 * index + 2] = 0;
+      }
+    }
+  }
+
+  return image;
+} ();
 
 template <typename T>
 class AccessorHelper {
@@ -136,13 +153,10 @@ void Loader::process() {
     process_material(material);
   }
 
-  scene.images.reserve(model.images.size());
+  scene.images.reserve(model.images.size() + 1);
+  scene.images.push_back(default_image);
   for (auto& image : model.images) {
     process_image(image);
-  }
-
-  if (scene.images.empty()) {
-    scene.images.push_back(default_image);
   }
 
   scene.samplers.reserve(model.samplers.size() + 1);
@@ -304,7 +318,7 @@ void Loader::process_sampler(const tinygltf::Sampler& gltf_sampler) {
 void Loader::process_texture(const tinygltf::Texture& gltf_texture) {
   Scene::Texture texture {
     .sampler_index = gltf_texture.sampler + 1,
-    .image_index = gltf_texture.source
+    .image_index = gltf_texture.source + 1
   };
 
   scene.textures.push_back(texture);
