@@ -191,7 +191,12 @@ void Loader::process_node(const tinygltf::Node& node, glm::mat4 transform) {
     }
 
     if (!node.rotation.empty()) {
-      glm::quat rotate(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+      glm::quat rotate(
+        static_cast<float>(node.rotation[3]), 
+        static_cast<float>(node.rotation[0]), 
+        static_cast<float>(node.rotation[1]), 
+        static_cast<float>(node.rotation[2])
+      );
       transform *= glm::toMat4(rotate);
     }
 
@@ -403,7 +408,7 @@ void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::
     throw std::runtime_error("Unknown index type in gltf file.");
   }
 
-  index_offset += vertex_count;
+  index_offset += static_cast<std::uint32_t>(vertex_count);
 }
 
 void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transform) {

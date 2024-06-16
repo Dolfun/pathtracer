@@ -168,7 +168,7 @@ void RenderJob::create_buffers() {
 }
 
 void RenderJob::create_images() {
-  image_count = scene.images.size();
+  image_count = static_cast<std::uint32_t>(scene.images.size());
   images.reserve(image_count);
   for (const auto& image : scene.images) {
     vk::ImageCreateInfo image_create_info {
@@ -190,7 +190,7 @@ void RenderJob::create_images() {
 }
 
 void RenderJob::create_samplers() {
-  combined_image_sampler_count = scene.textures.size();
+  combined_image_sampler_count = static_cast<std::uint32_t>(scene.textures.size());
 
   samplers.reserve(scene.samplers.size());
   for (const auto& sampler : scene.samplers) {
@@ -253,7 +253,7 @@ void RenderJob::copy_uniform_buffer_data() {
   std::uint32_t offset = 0;
   for (auto [src_ptr, size] : uniform_buffer_infos) {
     std::memcpy(static_cast<std::byte*>(dst_ptr) + offset, src_ptr, size);
-    offset += size;
+    offset += static_cast<std::uint32_t>(size);
   }
   (*device).unmapMemory(bind_info.memory);
 }
@@ -275,7 +275,7 @@ void RenderJob::create_descriptor_set_layout() {
 
   std::array<vk::DescriptorSetLayoutBinding, descriptor_count> layout_bindings{};
   for (std::uint32_t i = 0; i < storage_buffer_count; ++i) {
-    layout_bindings[binding_index] = vk::DescriptorSetLayoutBinding {
+    layout_bindings[binding_index] = {
       .binding = binding_index,
       .descriptorType = vk::DescriptorType::eStorageBuffer,
       .descriptorCount = 1,
@@ -286,7 +286,7 @@ void RenderJob::create_descriptor_set_layout() {
   }
 
   for (std::uint32_t i = 0; i < uniform_buffer_count; ++i) {
-    layout_bindings[binding_index] = vk::DescriptorSetLayoutBinding {
+    layout_bindings[binding_index] = {
       .binding = binding_index,
       .descriptorType = vk::DescriptorType::eUniformBuffer,
       .descriptorCount = 1,
@@ -296,8 +296,7 @@ void RenderJob::create_descriptor_set_layout() {
     ++binding_index;
   }
 
-  layout_bindings[binding_index] = 
-    vk::DescriptorSetLayoutBinding {
+  layout_bindings[binding_index] = {
       .binding = binding_index,
       .descriptorType = vk::DescriptorType::eCombinedImageSampler,
       .descriptorCount = combined_image_sampler_count,
@@ -316,17 +315,17 @@ void RenderJob::create_descriptor_set_layout() {
 void RenderJob::create_descriptor_pool() {
   std::array<vk::DescriptorPoolSize, 3> pool_sizes{};
 
-  pool_sizes[0] = vk::DescriptorPoolSize {
+  pool_sizes[0] = {
     .type = vk::DescriptorType::eStorageBuffer,
     .descriptorCount = storage_buffer_count
   };
 
-  pool_sizes[1] = vk::DescriptorPoolSize {
+  pool_sizes[1] = {
     .type = vk::DescriptorType::eUniformBuffer,
     .descriptorCount = uniform_buffer_count
   };
 
-  pool_sizes[2] = vk::DescriptorPoolSize {
+  pool_sizes[2] = {
     .type = vk::DescriptorType::eCombinedImageSampler,
     .descriptorCount = combined_image_sampler_count
   };
@@ -354,7 +353,7 @@ void RenderJob::create_descriptor_set() {
 
 void RenderJob::update_descriptor_set() {
   std::array<vk::DescriptorBufferInfo, storage_buffer_count> descriptor_storage_buffer_infos{};
-  descriptor_storage_buffer_infos[0] = vk::DescriptorBufferInfo {
+  descriptor_storage_buffer_infos[0] = {
     .buffer = **output_storage_buffer,
     .offset = 0,
     .range  = output_storage_buffer_size
@@ -362,7 +361,7 @@ void RenderJob::update_descriptor_set() {
 
   std::size_t input_storage_buffer_offset = 0;
   for (std::uint32_t i = 1; i < storage_buffer_count; ++i) {
-    descriptor_storage_buffer_infos[i] = vk::DescriptorBufferInfo {
+    descriptor_storage_buffer_infos[i] = {
       .buffer = **input_storage_buffer,
       .offset = input_storage_buffer_offset,
       .range  = input_storage_buffer_infos[i - 1].size
@@ -373,7 +372,7 @@ void RenderJob::update_descriptor_set() {
   std::array<vk::DescriptorBufferInfo, uniform_buffer_count> descriptor_uniform_buffer_infos{};
   std::size_t uniform_buffer_offset = 0;
   for (std::uint32_t i = 0; i < uniform_buffer_count; ++i) {
-    descriptor_uniform_buffer_infos[i] = vk::DescriptorBufferInfo {
+    descriptor_uniform_buffer_infos[i] = {
       .buffer = **uniform_buffer,
       .offset = uniform_buffer_offset,
       .range = uniform_buffer_infos[i].size
@@ -421,7 +420,7 @@ void RenderJob::update_descriptor_set() {
     ++descriptor_binding_index;
   }
 
-  descriptor_writes[descriptor_binding_index] = vk::WriteDescriptorSet {
+  descriptor_writes[descriptor_binding_index] = {
     .dstSet = *descriptor_set,
     .dstBinding = descriptor_binding_index,
     .dstArrayElement = 0,
@@ -453,7 +452,7 @@ void RenderJob::create_pipeline() {
   
   std::array<vk::SpecializationMapEntry, specialization_constant_count> specialization_map_entries{};
   for (std::uint32_t i = 0; i < specialization_constant_count; ++i) {
-    specialization_map_entries[i] = vk::SpecializationMapEntry {
+    specialization_map_entries[i] = {
       .constantID = i,
       .offset = static_cast<std::uint32_t>(i * sizeof(SpecializationConstant_t)),
       .size = sizeof(SpecializationConstant_t)
@@ -533,7 +532,7 @@ void RenderJob::record_command_buffer() {
 void RenderJob::transition_images_for_copy() {
   std::vector<vk::ImageMemoryBarrier2> barriers(image_count);
   for (std::uint32_t i = 0; i < image_count; ++i) {
-    barriers[i] = vk::ImageMemoryBarrier2 {
+    barriers[i] = {
       .srcStageMask = vk::PipelineStageFlagBits2::eNone,
       .srcAccessMask = vk::AccessFlagBits2::eNone,
       .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
@@ -608,7 +607,7 @@ void RenderJob::copy_input_resources() {
       vk::ImageLayout::eTransferDstOptimal, buffer_image_copy_info
     );
 
-    image_barriers[i] = vk::ImageMemoryBarrier2 {
+    image_barriers[i] = {
       .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
       .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
       .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
@@ -758,6 +757,9 @@ auto get_filter_type (Scene::SamplerFilter_t filter) -> vk::Filter {
 
     case Scene::SamplerFilter_t::nearest:
       return vk::Filter::eNearest;
+
+    default:
+      return vk::Filter::eLinear;
   }
 };
 
@@ -771,5 +773,8 @@ auto get_wrap_type(Scene::SamplerWarp_t wrap) -> vk::SamplerAddressMode {
 
     case Scene::SamplerWarp_t::clamp_to_edge:
       return vk::SamplerAddressMode::eClampToEdge;
+
+    default:
+      return vk::SamplerAddressMode::eRepeat;
   }
 };

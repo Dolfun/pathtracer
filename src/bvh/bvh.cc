@@ -33,7 +33,7 @@ private:
 };
 
 void BVHBuilder::build() {
-  std::uint32_t triangle_count = triangle_indices.size();
+  auto triangle_count = static_cast<std::uint32_t>(triangle_indices.size());
   nodes.resize(2 * triangle_count);
 
   BVHNode& root = nodes[0];
