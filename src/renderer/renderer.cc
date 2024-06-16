@@ -8,6 +8,7 @@ Renderer::Renderer() {
   create_instance();
   select_physical_device();
   select_queue_family_indices();
+  query_required_features();
   create_logical_device();
 }
 
@@ -81,6 +82,28 @@ void Renderer::select_queue_family_indices() {
   }
 }
 
+void Renderer::query_required_features() const {
+  auto features = physical_device->getFeatures2<
+    vk::PhysicalDeviceFeatures2,
+    vk::PhysicalDeviceSynchronization2Features,
+    vk::PhysicalDeviceMaintenance4Features,
+    vk::PhysicalDeviceDescriptorIndexingFeatures
+  >();
+
+  if (!features.get<vk::PhysicalDeviceSynchronization2Features>().synchronization2) {
+    throw std::runtime_error("Synchronization2 features is not supported!");
+  }
+
+  if (!features.get<vk::PhysicalDeviceMaintenance4Features>().maintenance4) {
+    throw std::runtime_error("Maintenance4 features is not supported!");
+  }
+
+  if (!features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>()
+      .shaderSampledImageArrayNonUniformIndexing) {
+    throw std::runtime_error("Descriptor Indexing is not supported!");
+  }
+}
+
 void Renderer::create_logical_device() {
   float queue_priority = 1.0f;
   vk::DeviceQueueCreateInfo queue_create_info {
@@ -89,17 +112,19 @@ void Renderer::create_logical_device() {
     .pQueuePriorities = &queue_priority,
   };
 
-  vk::PhysicalDeviceMaintenance4Features maintenance4_features {
-    .maintenance4 = true,
-  };
+  vk::StructureChain<
+    vk::PhysicalDeviceFeatures2,
+    vk::PhysicalDeviceSynchronization2Features,
+    vk::PhysicalDeviceMaintenance4Features,
+    vk::PhysicalDeviceDescriptorIndexingFeatures> features;
 
-  vk::PhysicalDeviceSynchronization2Features sync2_features {
-    .pNext = &maintenance4_features,
-    .synchronization2 = true,
-  };
+  features.get<vk::PhysicalDeviceSynchronization2Features>().synchronization2 = true;
+  features.get<vk::PhysicalDeviceMaintenance4Features>().maintenance4 = true;
+  features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>()
+    .shaderSampledImageArrayNonUniformIndexing = true;
 
   vk::DeviceCreateInfo device_create_info {
-    .pNext = &sync2_features,
+    .pNext = &features.get<vk::PhysicalDeviceFeatures2>(),
     .queueCreateInfoCount = 1,
     .pQueueCreateInfos = &queue_create_info,
   };

@@ -442,12 +442,14 @@ void RenderJob::create_pipeline() {
 
   vk::raii::ShaderModule shader_module { device, shader_module_create_info };
 
-  specialization_constants[0] = local_size_x;
-  specialization_constants[1] = local_size_y;
-  specialization_constants[2] = static_cast<std::uint32_t>(scene.materials.size());
-  specialization_constants[3] = static_cast<std::uint32_t>(scene.directional_lights.size() - 1);
-  specialization_constants[4] = static_cast<std::uint32_t>(scene.point_lights.size() - 1);
-  specialization_constants[5] = combined_image_sampler_count;
+  specialization_constants = {
+    local_size_x,                                                    // 0
+    local_size_y,                                                    // 1
+    static_cast<std::uint32_t>(scene.materials.size()),              // 2
+    static_cast<std::uint32_t>(scene.directional_lights.size() - 1), // 3
+    static_cast<std::uint32_t>(scene.point_lights.size() - 1),       // 4
+    combined_image_sampler_count                                     // 5
+  };
   
   std::array<vk::SpecializationMapEntry, specialization_constant_count> specialization_map_entries{};
   for (std::uint32_t i = 0; i < specialization_constant_count; ++i) {
