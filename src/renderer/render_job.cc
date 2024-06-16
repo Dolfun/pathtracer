@@ -450,7 +450,6 @@ void RenderJob::create_pipeline() {
     static_cast<std::uint32_t>(scene.materials.size()),              // 2
     static_cast<std::uint32_t>(scene.directional_lights.size() - 1), // 3
     static_cast<std::uint32_t>(scene.point_lights.size() - 1),       // 4
-    combined_image_sampler_count                                     // 5
   };
   
   std::array<vk::SpecializationMapEntry, specialization_constant_count> specialization_map_entries{};

@@ -98,8 +98,8 @@ void Renderer::create_logical_device() {
 
   features.get<vk::PhysicalDeviceSynchronization2Features>().synchronization2 = true;
   features.get<vk::PhysicalDeviceMaintenance4Features>().maintenance4 = true;
-  features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>()
-    .shaderSampledImageArrayNonUniformIndexing = true;
+  features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().shaderSampledImageArrayNonUniformIndexing = true;
+  features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().runtimeDescriptorArray = true;
   features.get<vk::PhysicalDeviceInlineUniformBlockFeatures>().inlineUniformBlock = true;
 
   vk::DeviceCreateInfo device_create_info {

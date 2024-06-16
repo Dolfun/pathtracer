@@ -7,7 +7,6 @@ layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 layout (constant_id = 2) const uint MATERIAL_COUNT = 1;
 layout (constant_id = 3) const uint DIRECTIONAL_LIGHT_COUNT = 1;
 layout (constant_id = 4) const uint POINT_LIGHT_COUNT = 1;
-layout (constant_id = 5) const uint SAMPLER_COUNT = 1;
 
 
 // <--------------------------------Structs----------------------------------->
@@ -79,35 +78,35 @@ struct IntersectInfo {
 
 // <------------------------------Descriptors--------------------------------->
 
-layout (set = 0, binding = 0) writeonly buffer result_ssbo {
+layout (set = 0, binding = 0) writeonly buffer result_SSBO {
   vec4 result[];
 };
 
-layout (set = 0, binding = 1) buffer position_ssbo {
+layout (set = 0, binding = 1) buffer position_SSBO {
   vec3 positions[][3];
 };
 
-layout (set = 0, binding = 2) readonly buffer triangle_ssbo {
+layout (set = 0, binding = 2) readonly buffer triangle_SSBO {
   Vertex triangles[][3];
 };
 
-layout (set = 0, binding = 3) readonly buffer bvh_ssbo {
+layout (set = 0, binding = 3) readonly buffer bvh_SSBO {
   BVHNode bvh_nodes[];
 };
 
-layout (set = 0, binding = 4) uniform material_ubo {
+layout (set = 0, binding = 4) uniform material_UBO {
   Material materials[MATERIAL_COUNT];
 };
 
-layout (set = 0, binding = 5) uniform directional_light_ubo {
+layout (set = 0, binding = 5) uniform directional_light_UBO {
   DirectionalLight directional_lights[DIRECTIONAL_LIGHT_COUNT + 1];
 };
 
-layout (set = 0, binding = 6) uniform point_light_ubo {
+layout (set = 0, binding = 6) uniform point_light_UBO {
   PointLight point_lights[POINT_LIGHT_COUNT + 1];
 };
 
-layout(binding = 7) uniform sampler2D samplers[SAMPLER_COUNT];
+layout(binding = 7) uniform sampler2D samplers[];
 
 layout (push_constant) uniform constant {
   Camera camera;
