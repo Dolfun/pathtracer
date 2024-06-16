@@ -26,9 +26,9 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
   add_input_storage_buffer_info<1>(packed_vertex_data);
   add_input_storage_buffer_info<2>(packed_bvh_nodes);
   
-  add_uniform_buffer_info<0>(scene.materials);
-  add_uniform_buffer_info<1>(scene.directional_lights);
-  add_uniform_buffer_info<2>(scene.point_lights);
+  add_inline_uniform_block_info<0>(scene.materials);
+  add_inline_uniform_block_info<1>(scene.directional_lights);
+  add_inline_uniform_block_info<2>(scene.point_lights);
   
   create_buffers();
   create_images();
@@ -39,7 +39,6 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
   create_image_views();
   stage_input_storage_buffer_data();
   stage_image_data();
-  copy_uniform_buffer_data();
 
   create_descriptor_set_layout();
   create_descriptor_pool();
@@ -142,18 +141,6 @@ void RenderJob::create_buffers() {
     .memory_flags = eHostVisible | eHostCoherent | eHostCached
   });
 
-  // Uniform Buffer
-  uniform_buffer_size = 0;
-  for (auto buffer_info : uniform_buffer_infos) {
-    uniform_buffer_size += buffer_info.size;
-  }
-
-  uniform_buffer = create_buffer({
-    .size = uniform_buffer_size,
-    .usage = eUniformBuffer,
-    .memory_flags = eDeviceLocal | eHostVisible | eHostCoherent
-  });
-  
   // Image Staging Buffer
   image_staging_buffer_size = 0;
   for (const auto& image : scene.images) {
@@ -247,17 +234,6 @@ void RenderJob::stage_input_storage_buffer_data() {
   (*device).unmapMemory(bind_info.memory);
 }
 
-void RenderJob::copy_uniform_buffer_data() {
-  auto bind_info = allocator.get_bind_info(*uniform_buffer).value();
-  void* dst_ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, uniform_buffer_size);
-  std::uint32_t offset = 0;
-  for (auto [src_ptr, size] : uniform_buffer_infos) {
-    std::memcpy(static_cast<std::byte*>(dst_ptr) + offset, src_ptr, size);
-    offset += static_cast<std::uint32_t>(size);
-  }
-  (*device).unmapMemory(bind_info.memory);
-}
-
 void RenderJob::stage_image_data() {
   auto bind_info = allocator.get_bind_info(*image_staging_buffer).value();
   void* dst_ptr = (*device).mapMemory(bind_info.memory, bind_info.memoryOffset, image_staging_buffer_size);
@@ -285,11 +261,11 @@ void RenderJob::create_descriptor_set_layout() {
     ++binding_index;
   }
 
-  for (std::uint32_t i = 0; i < uniform_buffer_count; ++i) {
+  for (std::uint32_t i = 0; i < inline_uniform_block_count; ++i) {
     layout_bindings[binding_index] = {
       .binding = binding_index,
-      .descriptorType = vk::DescriptorType::eUniformBuffer,
-      .descriptorCount = 1,
+      .descriptorType = vk::DescriptorType::eInlineUniformBlock,
+      .descriptorCount = static_cast<std::uint32_t>(inline_uniform_block_infos[i].size),
       .stageFlags = vk::ShaderStageFlagBits::eCompute
     };
 
@@ -297,10 +273,10 @@ void RenderJob::create_descriptor_set_layout() {
   }
 
   layout_bindings[binding_index] = {
-      .binding = binding_index,
-      .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-      .descriptorCount = combined_image_sampler_count,
-      .stageFlags = vk::ShaderStageFlagBits::eCompute
+    .binding = binding_index,
+    .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+    .descriptorCount = combined_image_sampler_count,
+    .stageFlags = vk::ShaderStageFlagBits::eCompute
   };
 
   vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info {
@@ -320,9 +296,14 @@ void RenderJob::create_descriptor_pool() {
     .descriptorCount = storage_buffer_count
   };
 
+  std::uint32_t total_inline_uniform_block_size = 0;
+  for (auto [ptr, size] : inline_uniform_block_infos) {
+    total_inline_uniform_block_size += static_cast<std::uint32_t>(size);
+  }
+
   pool_sizes[1] = {
-    .type = vk::DescriptorType::eUniformBuffer,
-    .descriptorCount = uniform_buffer_count
+    .type = vk::DescriptorType::eInlineUniformBlock,
+    .descriptorCount = total_inline_uniform_block_size
   };
 
   pool_sizes[2] = {
@@ -330,7 +311,12 @@ void RenderJob::create_descriptor_pool() {
     .descriptorCount = combined_image_sampler_count
   };
 
+  vk::DescriptorPoolInlineUniformBlockCreateInfo inline_uniform_block_create_info {
+    .maxInlineUniformBlockBindings = inline_uniform_block_count
+  };
+
   vk::DescriptorPoolCreateInfo pool_create_info {
+    .pNext = &inline_uniform_block_create_info,
     .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
     .maxSets = 1,
     .poolSizeCount = static_cast<std::uint32_t>(pool_sizes.size()),
@@ -352,6 +338,9 @@ void RenderJob::create_descriptor_set() {
 }
 
 void RenderJob::update_descriptor_set() {
+  std::array<vk::WriteDescriptorSet, descriptor_count> descriptor_writes{};
+  std::uint32_t descriptor_binding_index = 0;
+
   std::array<vk::DescriptorBufferInfo, storage_buffer_count> descriptor_storage_buffer_infos{};
   descriptor_storage_buffer_infos[0] = {
     .buffer = **output_storage_buffer,
@@ -369,31 +358,6 @@ void RenderJob::update_descriptor_set() {
     input_storage_buffer_offset += input_storage_buffer_infos[i - 1].size;
   }
 
-  std::array<vk::DescriptorBufferInfo, uniform_buffer_count> descriptor_uniform_buffer_infos{};
-  std::size_t uniform_buffer_offset = 0;
-  for (std::uint32_t i = 0; i < uniform_buffer_count; ++i) {
-    descriptor_uniform_buffer_infos[i] = {
-      .buffer = **uniform_buffer,
-      .offset = uniform_buffer_offset,
-      .range = uniform_buffer_infos[i].size
-    };
-    uniform_buffer_offset += uniform_buffer_infos[i].size;
-  }
-
-  std::vector<vk::DescriptorImageInfo> descriptor_image_infos;
-  descriptor_image_infos.reserve(combined_image_sampler_count);
-  for (auto [sampler_index, image_index] : scene.textures) {
-    vk::DescriptorImageInfo descriptor_image_info {
-      .sampler = samplers[sampler_index],
-      .imageView = image_views[image_index],
-      .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-    };
-    descriptor_image_infos.push_back(descriptor_image_info);
-  }
-
-  std::array<vk::WriteDescriptorSet, descriptor_count> descriptor_writes{};
-  std::uint32_t descriptor_binding_index = 0;
-
   for (std::uint32_t i = 0; i < storage_buffer_count; ++i) {
     descriptor_writes[descriptor_binding_index] = {
       .dstSet = *descriptor_set,
@@ -407,17 +371,35 @@ void RenderJob::update_descriptor_set() {
     ++descriptor_binding_index;
   }
 
-  for (std::uint32_t i = 0; i < uniform_buffer_count; ++i) {
+  std::array<vk::WriteDescriptorSetInlineUniformBlock, inline_uniform_block_count>
+    descriptor_inline_uniform_block_infos{};
+  for (std::uint32_t i = 0; i < inline_uniform_block_count; ++i) {
+    descriptor_inline_uniform_block_infos[i] = {
+      .dataSize = static_cast<std::uint32_t>(inline_uniform_block_infos[i].size),
+      .pData = inline_uniform_block_infos[i].ptr
+    };
+
     descriptor_writes[descriptor_binding_index] = {
+      .pNext = &descriptor_inline_uniform_block_infos[i],
       .dstSet = *descriptor_set,
       .dstBinding = descriptor_binding_index,
       .dstArrayElement = 0,
-      .descriptorCount = 1,
-      .descriptorType = vk::DescriptorType::eUniformBuffer,
-      .pBufferInfo = &descriptor_uniform_buffer_infos[i]
+      .descriptorCount = static_cast<std::uint32_t>(inline_uniform_block_infos[i].size),
+      .descriptorType = vk::DescriptorType::eInlineUniformBlock,
     };
 
     ++descriptor_binding_index;
+  }
+
+  std::vector<vk::DescriptorImageInfo> descriptor_image_infos;
+  descriptor_image_infos.reserve(combined_image_sampler_count);
+  for (auto [sampler_index, image_index] : scene.textures) {
+    vk::DescriptorImageInfo descriptor_image_info {
+      .sampler = samplers[sampler_index],
+      .imageView = image_views[image_index],
+      .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+    };
+    descriptor_image_infos.push_back(descriptor_image_info);
   }
 
   descriptor_writes[descriptor_binding_index] = {

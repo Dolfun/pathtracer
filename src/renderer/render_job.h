@@ -59,7 +59,7 @@ private:
   template <std::size_t index>
   void add_input_storage_buffer_info(const auto&);
   template <std::size_t index>
-  void add_uniform_buffer_info(const auto&);
+  void add_inline_uniform_block_info(const auto&);
 
   auto create_buffer(const BufferCreateInfo&) 
     -> std::unique_ptr<vk::raii::Buffer>;
@@ -69,7 +69,6 @@ private:
   void create_image_views();
 
   void stage_input_storage_buffer_data();
-  void copy_uniform_buffer_data();
   void stage_image_data();
 
   void create_descriptor_set_layout();
@@ -98,11 +97,13 @@ private:
   std::vector<PackedBVHNode> packed_bvh_nodes;
 
   static constexpr std::uint32_t input_storage_buffer_count = 3;
-  static constexpr std::uint32_t storage_buffer_count = input_storage_buffer_count + 1;
-  static constexpr std::uint32_t uniform_buffer_count = 3;
-  static constexpr std::uint32_t descriptor_count = storage_buffer_count + uniform_buffer_count + 1;
   std::array<BufferInfo, input_storage_buffer_count> input_storage_buffer_infos;
-  std::array<BufferInfo, uniform_buffer_count> uniform_buffer_infos;
+
+  static constexpr std::uint32_t inline_uniform_block_count = 3;
+  std::array<BufferInfo, inline_uniform_block_count> inline_uniform_block_infos;
+
+  static constexpr std::uint32_t storage_buffer_count = input_storage_buffer_count + 1;
+  static constexpr std::uint32_t descriptor_count = storage_buffer_count + inline_uniform_block_count + 1;
 
   std::size_t input_storage_buffer_size;
   std::unique_ptr<vk::raii::Buffer> input_storage_buffer, input_staging_buffer;
@@ -110,9 +111,6 @@ private:
   std::size_t output_image_pixel_count;
   std::size_t output_storage_buffer_size;
   std::unique_ptr<vk::raii::Buffer> output_storage_buffer, output_unstaging_buffer;
-
-  std::size_t uniform_buffer_size;
-  std::unique_ptr<vk::raii::Buffer> uniform_buffer;
 
   std::uint32_t image_count;
   std::uint32_t combined_image_sampler_count;
@@ -145,8 +143,8 @@ void RenderJob::add_input_storage_buffer_info(const auto& v) {
 }
 
 template <std::size_t index>
-void RenderJob::add_uniform_buffer_info(const auto& v) {
-  uniform_buffer_infos[index] = BufferInfo {
+void RenderJob::add_inline_uniform_block_info(const auto& v) {
+  inline_uniform_block_infos[index] = BufferInfo {
     .ptr  = static_cast<const void*>(v.data()),
     .size = v.size() * sizeof(v[0])
   };

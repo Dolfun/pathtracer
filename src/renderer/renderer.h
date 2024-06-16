@@ -40,7 +40,6 @@ private:
   void create_instance();
   void select_physical_device();
   void select_queue_family_indices();
-  void query_required_features() const;
   void create_logical_device();
 
   vk::raii::Context context;
