@@ -1,6 +1,4 @@
 #include <random>
-#include <algorithm>
-#include <execution>
 #include <fmt/core.h>
 #include <stb_image_write.h>
 #include "renderer.h"
@@ -39,17 +37,10 @@ int main() {
       scene = load_gltf("sorceress.glb");
     });
 
-    auto [data, size] = renderer->render(scene, config);
-
-    std::vector<uint8_t> image(size);
-    timeit("std::transform", [&] {
-      std::transform(std::execution::par, data, data + size, image.begin(), [] (const float x) {
-        return static_cast<std::uint8_t>(x * 255.999f);
-      });
-    });
+    auto [image, size] = renderer->render(scene, config);
     
     timeit("stbi_write_bmp", [&] {
-      stbi_write_bmp("output.bmp", config.resolution_x, config.resolution_y, NR_CHANNELS, image.data());
+      stbi_write_bmp("output.bmp", config.resolution_x, config.resolution_y, NR_CHANNELS, image);
     });
 
     fmt::println("\nTriangle Count: {}", scene.triangle_indices.size());

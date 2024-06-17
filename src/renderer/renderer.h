@@ -32,7 +32,7 @@ public:
   Renderer();
 
   auto render(Scene&, const RenderConfig&) const 
-    -> std::pair<const float*, std::size_t>;
+    -> std::pair<const unsigned char*, std::size_t>;
 
   friend class RenderJob;
 

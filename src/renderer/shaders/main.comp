@@ -78,35 +78,33 @@ struct IntersectInfo {
 
 // <------------------------------Descriptors--------------------------------->
 
-layout (set = 0, binding = 0) writeonly buffer result_SSBO {
-  vec4 result[];
-};
-
-layout (set = 0, binding = 1) buffer position_SSBO {
+layout (set = 0, binding = 0) buffer position_SSBO {
   vec3 positions[][3];
 };
 
-layout (set = 0, binding = 2) readonly buffer triangle_SSBO {
+layout (set = 0, binding = 1) readonly buffer triangle_SSBO {
   Vertex triangles[][3];
 };
 
-layout (set = 0, binding = 3) readonly buffer bvh_SSBO {
+layout (set = 0, binding = 2) readonly buffer bvh_SSBO {
   BVHNode bvh_nodes[];
 };
 
-layout (set = 0, binding = 4) uniform material_UBO {
+layout (set = 0, binding = 3) uniform material_UBO {
   Material materials[MATERIAL_COUNT];
 };
 
-layout (set = 0, binding = 5) uniform directional_light_UBO {
+layout (set = 0, binding = 4) uniform directional_light_UBO {
   DirectionalLight directional_lights[DIRECTIONAL_LIGHT_COUNT + 1];
 };
 
-layout (set = 0, binding = 6) uniform point_light_UBO {
+layout (set = 0, binding = 5) uniform point_light_UBO {
   PointLight point_lights[POINT_LIGHT_COUNT + 1];
 };
 
-layout(binding = 7) uniform sampler2D samplers[];
+layout (set = 0, binding = 6) uniform sampler2D textures[];
+
+layout (set = 0, binding = 7, rgba8) uniform writeonly image2D result;
 
 layout (push_constant) uniform constant {
   Camera camera;
@@ -137,11 +135,11 @@ float rand_float() {
 
 // <----------------------------------Ray------------------------------------->
 
-Ray get_ray_through_pixel(const uint x, const uint y) {
+Ray get_ray_through_pixel(ivec2 id) {
   vec3 pixel_center = 
     camera.corner_pixel_pos + 
-    (rand_float() - 0.5 + x) * camera.pixel_delta_u +
-    (rand_float() - 0.5 + y) * camera.pixel_delta_v;
+    (rand_float() - 0.5 + id.x) * camera.pixel_delta_u +
+    (rand_float() - 0.5 + id.y) * camera.pixel_delta_v;
 
   Ray ray;
   ray.origin = camera.pos;
@@ -247,6 +245,12 @@ void ray_scene_intersect(const Ray ray, inout IntersectInfo info) {
 
 // <-------------------------------Ray-color---------------------------------->
 
+vec4 sample_texture(uint index, vec2 texcoord) {
+  return texture(textures[nonuniformEXT(index)], texcoord);
+}
+
+// <-------------------------------Ray-color---------------------------------->
+
 const float gamma = 2.2;
 vec3 get_ray_color(Ray ray) {
   vec3 color = vec3(0.0);
@@ -279,7 +283,7 @@ vec3 get_ray_color(Ray ray) {
     Material mat = materials[vertices[0].material_idx];
     vec4 base_color = mat.base_color;
     if (mat.base_color_texture_idx != -1) {
-      vec4 sampled_color = texture(samplers[nonuniformEXT(mat.base_color_texture_idx)], texcoord);
+      vec4 sampled_color = sample_texture(mat.base_color_texture_idx, texcoord);
       sampled_color.rgb = pow(sampled_color.rgb, vec3(gamma));
       base_color *= sampled_color;
     }
@@ -308,21 +312,19 @@ vec3 get_ray_color(Ray ray) {
 // <---------------------------------Main------------------------------------->
 
 void main() {
-  uint id_x = gl_GlobalInvocationID.y;
-  uint id_y = gl_GlobalInvocationID.x;
-  if (id_x >= resolution_x || id_y >= resolution_y) return;
+  ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+  if (id.x >= resolution_x || id.y >= resolution_y) return;
 
-  uint index = id_y * resolution_x + id_x;
+  uint index = id.y * resolution_x + id.x;
   rand_state = index ^ seed;
 
   vec3 color = vec3(0.0);
   for (uint i = 0; i < sample_count; ++i) {
-    Ray ray = get_ray_through_pixel(id_x, id_y);
+    Ray ray = get_ray_through_pixel(id);
     color += get_ray_color(ray);
   }
   color /= sample_count;
+  color = pow(color, vec3(1.0 / gamma));
 
-  color.rgb = pow(color.rgb, vec3(1.0 / gamma));
-
-  result[index] = vec4(color, 1.0f);
+  imageStore(result, id, vec4(color, 1.0));
 }

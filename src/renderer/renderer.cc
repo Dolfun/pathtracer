@@ -93,14 +93,12 @@ void Renderer::create_logical_device() {
     vk::PhysicalDeviceFeatures2,
     vk::PhysicalDeviceSynchronization2Features,
     vk::PhysicalDeviceMaintenance4Features,
-    vk::PhysicalDeviceDescriptorIndexingFeatures,
-    vk::PhysicalDeviceInlineUniformBlockFeatures> features;
+    vk::PhysicalDeviceDescriptorIndexingFeatures> features;
 
   features.get<vk::PhysicalDeviceSynchronization2Features>().synchronization2 = true;
   features.get<vk::PhysicalDeviceMaintenance4Features>().maintenance4 = true;
   features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().shaderSampledImageArrayNonUniformIndexing = true;
   features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().runtimeDescriptorArray = true;
-  features.get<vk::PhysicalDeviceInlineUniformBlockFeatures>().inlineUniformBlock = true;
 
   vk::DeviceCreateInfo device_create_info {
     .pNext = &features.get<vk::PhysicalDeviceFeatures2>(),
@@ -153,14 +151,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debug_callback(
 #endif
 
 auto Renderer::render(Scene& scene, const RenderConfig& config) const
-    -> std::pair<const float*, std::size_t> {
+    -> std::pair<const unsigned char*, std::size_t> {
 
   std::unique_ptr<RenderJob> render_job;
   timeit("RenderJob::RenderJob", [&] {
     render_job = std::make_unique<RenderJob>(*this, config, scene);
   });
 
-  std::pair<const float*, std::size_t> result;
+  std::pair<const unsigned char*, std::size_t> result;
   timeit("RenderJob::render", [&] {
     result = render_job->render();
   });
