@@ -18,13 +18,6 @@ struct RenderConfig {
   std::uint32_t seed;
   std::uint32_t sample_count;
   glm::vec3 bg_color;
-
-  struct Camera {
-    glm::vec3 position;
-    glm::vec3 lookat;
-    glm::vec3 up;
-    float vertical_fov;
-  } camera;
 };
 
 class Renderer {

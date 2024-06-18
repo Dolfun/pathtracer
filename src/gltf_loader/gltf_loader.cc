@@ -52,6 +52,8 @@ const Scene::Image default_image = [] {
   return image;
 } ();
 
+constexpr std::uint32_t default_camera_index = 0;
+
 template <typename T>
 class AccessorHelper {
 public:
@@ -99,6 +101,7 @@ private:
   void process_image(tinygltf::Image&);
   void process_sampler(const tinygltf::Sampler&);
   void process_texture(const tinygltf::Texture&);
+  void process_camera();
 
   template <typename T>
   auto get_attribute_accessor(const tinygltf::Primitive&, const std::string&) const
@@ -114,6 +117,7 @@ private:
   Scene& scene;
   tinygltf::Model model;
   std::uint32_t index_offset;
+  glm::mat4 camera_transform;
 };
 
 Loader::Loader(const std::string& path, Scene& _scene) 
@@ -176,6 +180,8 @@ void Loader::process() {
 
   scene.directional_lights.emplace_back();
   scene.point_lights.emplace_back();
+
+  process_camera();
 }
 
 void Loader::process_node(const tinygltf::Node& node, glm::mat4 transform) {
@@ -217,6 +223,10 @@ void Loader::process_node(const tinygltf::Node& node, glm::mat4 transform) {
 
   if (node.light != -1) {
     process_light(model.lights[node.light], transform);
+  }
+
+  if (node.camera == default_camera_index) {
+    camera_transform = transform;
   }
 
   for (auto i : node.children) {
@@ -436,6 +446,36 @@ void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transf
     };
 
     scene.point_lights.push_back(point_light);
+  }
+}
+
+void Loader::process_camera() {
+  if (model.cameras.empty()) {
+    glm::vec3 position { -std::numeric_limits<float>::infinity() };
+
+    for (const auto vertex : scene.vertices) {
+      position = glm::max(position, vertex.position);
+    }
+
+    position *= 1.75f;
+
+    scene.camera = {
+      .position = position,
+      .lookat = glm::normalize(-position),
+      .vertical_fov = glm::radians(45.0f)
+    };
+
+  } else {
+    const auto& gltf_camera = model.cameras[default_camera_index];
+    glm::vec3 position = glm::vec3(camera_transform[3]);
+    auto transform = glm::mat3(glm::transpose(glm::inverse(camera_transform)));
+    glm::vec3 direction = transform * glm::vec3(0.0f, 0.0f, -1.0f);
+
+    scene.camera = {
+      .position = position,
+      .lookat = glm::normalize(direction),
+      .vertical_fov = static_cast<float>(gltf_camera.perspective.yfov)
+    };
   }
 }
 

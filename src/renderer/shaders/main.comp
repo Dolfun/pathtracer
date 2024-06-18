@@ -9,7 +9,6 @@ layout (constant_id = 3) const uint DIRECTIONAL_LIGHT_COUNT = 1;
 layout (constant_id = 4) const uint POINT_LIGHT_COUNT = 1;
 layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 
-
 // <--------------------------------Structs----------------------------------->
 
 struct Vertex {
@@ -247,12 +246,12 @@ void ray_scene_intersect(const Ray ray, inout IntersectInfo info) {
 // <-------------------------------Ray-color---------------------------------->
 
 vec4 sample_texture(uint index, vec2 texcoord) {
+  if (index == -1) return vec4(1.0);
   return texture(textures[nonuniformEXT(index)], texcoord);
 }
 
 // <-------------------------------Ray-color---------------------------------->
 
-const float gamma = 2.2;
 vec3 get_ray_color(Ray ray) {
   vec3 color = vec3(0.0);
 
@@ -283,11 +282,8 @@ vec3 get_ray_color(Ray ray) {
 
     Material mat = materials[vertices[0].material_idx];
     vec4 base_color = mat.base_color;
-    if (mat.base_color_texture_idx != -1) {
-      vec4 sampled_color = sample_texture(mat.base_color_texture_idx, texcoord);
-      sampled_color.rgb = pow(sampled_color.rgb, vec3(gamma));
-      base_color *= sampled_color;
-    }
+    vec4 sampled_color = sample_texture(mat.base_color_texture_idx, texcoord);
+    base_color *= sampled_color;
 
     color += current_alpha * base_color.rgb * base_color.a;
     current_alpha *= 1.0 - base_color.a;
@@ -325,7 +321,6 @@ void main() {
     color += get_ray_color(ray);
   }
   color /= sample_count;
-  color = pow(color, vec3(1.0 / gamma));
 
   imageStore(result, id, vec4(color, 1.0));
 }

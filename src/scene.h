@@ -66,6 +66,12 @@ struct Scene {
     glm::vec3 color;
     float intensity;
   };
+
+  struct Camera {
+    glm::vec3 position;
+    glm::vec3 lookat;
+    float vertical_fov;
+  };
   
   std::vector<Vertex> vertices;
   std::vector<VertexIndices> triangle_indices;
@@ -75,4 +81,5 @@ struct Scene {
   std::vector<Texture> textures;
   std::vector<DirectionalLight> directional_lights;
   std::vector<PointLight> point_lights;
+  Camera camera;
 };

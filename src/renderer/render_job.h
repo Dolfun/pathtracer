@@ -20,7 +20,7 @@ struct alignas(16) PackedBVHNode {
 };
 
 struct PushConstants {
-  PushConstants(const RenderConfig&);
+  PushConstants(const RenderConfig&, const Scene&);
 
   struct Camera {
     glm::vec3 position;

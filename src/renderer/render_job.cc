@@ -754,7 +754,7 @@ void RenderJob::dispatch_compute_shader() {
     vk::PipelineBindPoint::eCompute, *pipeline_layout, 0, { *descriptor_set }, {}
   );
 
-  PushConstants push_constants { config };
+  PushConstants push_constants { config, scene };
   command_buffer->pushConstants<PushConstants>(
     *pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, { push_constants }
   );
@@ -823,23 +823,24 @@ auto RenderJob::render() const -> std::pair<const unsigned char*, std::size_t> {
   return std::make_pair(static_cast<const unsigned char*>(ptr), result_image_pixel_count * NR_CHANNELS);
 }
 
-PushConstants::PushConstants(const RenderConfig& config) :
+PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
     resolution_x { config.resolution_x }, resolution_y { config.resolution_y },
     seed { config.seed }, sample_count { config.sample_count },
     bg_color { config.bg_color } {
 
   float resolution_x = static_cast<float>(config.resolution_x);
   float resolution_y = static_cast<float>(config.resolution_y);
-  const auto& camera = config.camera;
+  const auto& camera = scene.camera;
 
-  glm::vec3 w = glm::normalize(camera.position - camera.lookat);
-  glm::vec3 u = glm::normalize(glm::cross(camera.up, w));
+  glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+  glm::vec3 w = glm::normalize(-camera.lookat);
+  glm::vec3 u = glm::normalize(glm::cross(up, w));
   glm::vec3 v = glm::cross(w, u);
 
-  float focal_length = glm::length(camera.position - camera.lookat);
-  float theta = glm::radians(camera.vertical_fov);
-  float viewport_height = 2.0f * glm::tan(theta / 2.0f) * focal_length;
+  float viewport_height = 2.0f;
   float viewport_width = viewport_height * resolution_x / resolution_y;
+  float theta = camera.vertical_fov;
+  float focal_length = 1.0f / glm::tan(theta / 2.0f);
 
   glm::vec3 viewport_u = viewport_width * u;
   glm::vec3 viewport_v = viewport_height * -v;

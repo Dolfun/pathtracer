@@ -23,13 +23,7 @@ int main() {
       .resolution_y = 1920,
       .seed = dist(engine),
       .sample_count = 128,
-      .bg_color = { 0.1, 0.1, 0.1 },
-      .camera {
-        .position = { 4.2f, 4.0f, 2.8f },
-        .lookat = { 0.0f, 0.0f, 0.0f },
-        .up = { 0.0f, 1.0f, 0.0f },
-        .vertical_fov = 40.0f,
-      },
+      .bg_color = { 0.239, 0.239, 0.239 },
     };
 
     Scene scene;
