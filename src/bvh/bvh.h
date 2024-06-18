@@ -40,4 +40,4 @@ struct BVHNode {
   std::uint32_t triangle_count;
 };
 
-auto build_bvh(Scene&, std::uint32_t) -> std::vector<BVHNode>;
+auto build_bvh(Scene&, std::uint32_t, std::uint32_t&) -> std::vector<BVHNode>;

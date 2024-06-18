@@ -7,6 +7,7 @@ layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 layout (constant_id = 2) const uint MATERIAL_COUNT = 1;
 layout (constant_id = 3) const uint DIRECTIONAL_LIGHT_COUNT = 1;
 layout (constant_id = 4) const uint POINT_LIGHT_COUNT = 1;
+layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 
 
 // <--------------------------------Structs----------------------------------->
@@ -202,14 +203,14 @@ void ray_triangle_intersect(
 
 // <-------------------------Ray-Scene-Intersection--------------------------->
 
-#define STACK_SIZE 64
+#define MIN_STACK_SIZE 64
+const uint STACK_SIZE = MIN_STACK_SIZE * (BVH_MAX_DEPTH + MIN_STACK_SIZE - 1) / MIN_STACK_SIZE;
 uint stack[STACK_SIZE];
 void ray_scene_intersect(const Ray ray, inout IntersectInfo info) {
   uint top = 0;
   stack[top++] = 0;
 
   while (top != 0) {
-    if (top >= STACK_SIZE) return;
     BVHNode node = bvh_nodes[stack[--top]];
 
     if (node.tri_count > 0) {

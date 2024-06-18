@@ -118,6 +118,7 @@ private:
   std::vector<PackedBVHNode> packed_bvh_nodes;
 
   std::uint32_t local_size_x, local_size_y;
+  std::uint32_t bvh_max_depth;
 
   static constexpr std::uint32_t scene_data_storage_buffer_count = 3;
   std::array<BufferInfo, scene_data_storage_buffer_count> scene_data_storage_buffer_infos;
@@ -151,7 +152,7 @@ private:
   std::unique_ptr<vk::raii::DescriptorPool> descriptor_pool;
   std::unique_ptr<vk::raii::DescriptorSet> descriptor_set;
 
-  static constexpr std::uint32_t specialization_constant_count = 5;
+  static constexpr std::uint32_t specialization_constant_count = 6;
   using SpecializationConstant_t = std::uint32_t;
   std::array<SpecializationConstant_t, specialization_constant_count> specialization_constants;
   std::unique_ptr<vk::raii::PipelineLayout> pipeline_layout;

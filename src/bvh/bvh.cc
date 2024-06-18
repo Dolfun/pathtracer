@@ -18,8 +18,8 @@ public:
     : vertices { scene.vertices }, triangle_indices { scene.triangle_indices }, 
       nodes { _nodes }, node_count { 2 }, bin_count { _bin_count } {}
 
-  void build();
-  void subdivide(BVHNode&);
+  std::uint32_t build();
+  void subdivide(BVHNode&, std::uint32_t);
   void update_bounds(BVHNode&) const;
   auto find_split(BVHNode&) const -> std::tuple<std::uint32_t, float, float>;
   glm::vec3 centroid(const VertexIndices&) const;
@@ -30,9 +30,10 @@ private:
   std::vector<BVHNode>& nodes;
   std::uint32_t node_count;
   std::uint32_t bin_count;
+  std::uint32_t max_depth;
 };
 
-void BVHBuilder::build() {
+std::uint32_t BVHBuilder::build() {
   auto triangle_count = static_cast<std::uint32_t>(triangle_indices.size());
   nodes.resize(2 * triangle_count);
 
@@ -41,11 +42,16 @@ void BVHBuilder::build() {
   root.begin_index = 0;
   root.triangle_count = triangle_count;
 
-  subdivide(root);
+  max_depth = 0;
+  subdivide(root, 1);
+
   nodes.resize(node_count);
+  return max_depth;
 }
 
-void BVHBuilder::subdivide(BVHNode& node) {
+void BVHBuilder::subdivide(BVHNode& node, std::uint32_t depth) {
+  max_depth = std::max(max_depth, depth);
+
   update_bounds(node);
 
   auto [split_axis, split_pos, split_cost] = find_split(node);
@@ -77,8 +83,8 @@ void BVHBuilder::subdivide(BVHNode& node) {
 
   node.triangle_count = 0;
 
-  subdivide(left_child);
-  subdivide(right_child);
+  subdivide(left_child, depth + 1);
+  subdivide(right_child, depth + 1);
 }
 
 void BVHBuilder::update_bounds(BVHNode& node) const {
@@ -152,11 +158,12 @@ glm::vec3 BVHBuilder::centroid(const VertexIndices& indices) const {
   return c;
 }
 
-auto build_bvh(Scene& scene, std::uint32_t bin_count) -> std::vector<BVHNode> {
+auto build_bvh(Scene& scene, std::uint32_t bin_count, std::uint32_t& depth) 
+    -> std::vector<BVHNode> {
   std::vector<BVHNode> nodes;
 
   BVHBuilder builder { scene, nodes, bin_count };
-  builder.build();
+  depth = builder.build();
 
   return nodes;
 }
