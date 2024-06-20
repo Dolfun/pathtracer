@@ -179,11 +179,11 @@ void list_devices() {
 
   vk::raii::Context context;
   vk::raii::Instance instance { context, create_info };
-  vk::raii::PhysicalDevices physical_devices { instance };
+  vk::raii::PhysicalDevices devices { instance };
 
-  for (const auto& device : physical_devices) {
-    auto name = device.getProperties().deviceName;
+  for (std::size_t i = 0; i < devices.size(); ++i) {
+    auto name = devices[i].getProperties().deviceName;
     std::string name_str { name.begin(), name.end() };
-    fmt::println("{}", name_str);
+    fmt::println("{}: {}", i, name_str);
   }
 }
