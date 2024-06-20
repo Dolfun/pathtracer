@@ -4,9 +4,9 @@
 #include <fmt/core.h>
 #include <fmt/color.h>
 
-Renderer::Renderer() {
+Renderer::Renderer(const std::uint32_t device_index) {
   create_instance();
-  select_physical_device();
+  select_physical_device(device_index);
   select_queue_family_indices();
   create_logical_device();
 }
@@ -51,8 +51,13 @@ void Renderer::create_instance() {
 #endif
 }
 
-void Renderer::select_physical_device() {
+void Renderer::select_physical_device(const std::uint32_t device_index) {
   vk::raii::PhysicalDevices physical_devices { *instance };
+
+  if (device_index > 0 && device_index < physical_devices.size()) {
+    physical_device = std::make_unique<vk::raii::PhysicalDevice>(physical_devices[device_index]);
+    return;
+  }
 
   for (const auto& device : physical_devices) {
     if (device.getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
@@ -153,15 +158,32 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debug_callback(
 auto Renderer::render(Scene& scene, const RenderConfig& config) const
     -> std::pair<const unsigned char*, std::size_t> {
 
-  std::unique_ptr<RenderJob> render_job;
-  timeit("RenderJob::RenderJob", [&] {
-    render_job = std::make_unique<RenderJob>(*this, config, scene);
-  });
+  RenderJob render_job { *this, config, scene };
 
   std::pair<const unsigned char*, std::size_t> result;
-  timeit("RenderJob::render", [&] {
-    result = render_job->render();
+  timeit("Rendering", [&] {
+    result = render_job.render();
   });
 
   return result;
+}
+
+void list_devices() {
+  vk::ApplicationInfo application_info {
+    .apiVersion = VK_API_VERSION_1_3
+  };
+
+  vk::InstanceCreateInfo create_info {
+    .pApplicationInfo = &application_info,
+  };
+
+  vk::raii::Context context;
+  vk::raii::Instance instance { context, create_info };
+  vk::raii::PhysicalDevices physical_devices { instance };
+
+  for (const auto& device : physical_devices) {
+    auto name = device.getProperties().deviceName;
+    std::string name_str { name.begin(), name.end() };
+    fmt::println("{}", name_str);
+  }
 }

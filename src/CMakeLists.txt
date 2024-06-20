@@ -9,7 +9,8 @@ add_executable(main main.cc)
 target_link_libraries(
   main
   PRIVATE
-  renderer
   stb
+  renderer
   gltf_loader
+  nlohmann_json::nlohmann_json
 )

@@ -15,14 +15,13 @@
 
 struct RenderConfig {
   std::uint32_t resolution_x, resolution_y;
-  std::uint32_t seed;
   std::uint32_t sample_count;
   glm::vec3 bg_color;
 };
 
 class Renderer {
 public:
-  Renderer();
+  Renderer(const std::uint32_t device_index = -1);
 
   auto render(Scene&, const RenderConfig&) const 
     -> std::pair<const unsigned char*, std::size_t>;
@@ -31,7 +30,7 @@ public:
 
 private:
   void create_instance();
-  void select_physical_device();
+  void select_physical_device(const std::uint32_t);
   void select_queue_family_indices();
   void create_logical_device();
 
@@ -51,3 +50,5 @@ private:
     void*);
 #endif
 };
+
+void list_devices();

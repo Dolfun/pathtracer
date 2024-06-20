@@ -1,6 +1,7 @@
 #include "render_job.h"
 #include "renderer.h"
 #include "../timeit.h"
+#include <random>
 #include <fstream>
 #include <glm/glm.hpp>
 
@@ -21,7 +22,7 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
     allocator { *renderer.device, renderer.physical_device->getMemoryProperties() },
     scene { _scene } {
 
-  timeit("Building BVH", [&] {
+  timeit("BVH Construction", [&] {
     bvh_nodes = build_bvh(scene, 16, bvh_max_depth);
   });
 
@@ -825,8 +826,12 @@ auto RenderJob::render() const -> std::pair<const unsigned char*, std::size_t> {
 
 PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
     resolution_x { config.resolution_x }, resolution_y { config.resolution_y },
-    seed { config.seed }, sample_count { config.sample_count },
-    bg_color { config.bg_color } {
+    sample_count { config.sample_count }, bg_color { config.bg_color } {
+
+  static std::random_device rd;
+  static std::mt19937 engine { rd() };
+  static std::uniform_int_distribution<std::uint32_t> dist;
+  seed = dist(rd);
 
   float resolution_x = static_cast<float>(config.resolution_x);
   float resolution_y = static_cast<float>(config.resolution_y);
