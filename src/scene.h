@@ -55,16 +55,15 @@ struct Scene {
   };
 
   struct alignas(16) DirectionalLight {
-    glm::vec3 direction;
-    float intensity;
     glm::vec3 color;
+    float intensity;
+    glm::vec3 direction;
   };
 
   struct alignas(16) PointLight {
-    glm::vec3 position;
-    float range;
     glm::vec3 color;
     float intensity;
+    glm::vec3 position;
   };
 
   struct Camera {

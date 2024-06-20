@@ -9,6 +9,12 @@ layout (constant_id = 3) const uint DIRECTIONAL_LIGHT_COUNT = 1;
 layout (constant_id = 4) const uint POINT_LIGHT_COUNT = 1;
 layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 
+#define PI 3.1415926535
+#define GAMMA 2.2
+#define INFINITY 3.4e+38
+#define NORMAL_DELTA 1e-3
+#define LIGHT_INTENSITY_FACTOR 25.0
+
 // <--------------------------------Structs----------------------------------->
 
 struct Vertex {
@@ -32,7 +38,7 @@ struct Material {
   vec4 base_color;
   int base_color_texture_idx;
 
-  float metalness;
+  float metallic;
   float roughness;
   int metallic_roughness_texture_idx;
 
@@ -47,16 +53,15 @@ struct Material {
 };
 
 struct DirectionalLight {
-  vec3 dir;
-  float intensity;
   vec3 color;
+  float intensity;
+  vec3 dir;
 };
 
 struct PointLight {
-  vec3 pos;
-  float range;
   vec3 color;
   float intensity;
+  vec3 pos;
 };
 
 struct Camera {
@@ -133,18 +138,11 @@ float rand_float() {
   return float(rand_state) / float(~0u);
 }
 
-// <----------------------------------Ray------------------------------------->
-
-Ray get_ray_through_pixel(ivec2 id) {
-  vec3 pixel_center = 
-    camera.corner_pixel_pos + 
-    (rand_float() - 0.5 + id.x) * camera.pixel_delta_u +
-    (rand_float() - 0.5 + id.y) * camera.pixel_delta_v;
-
-  Ray ray;
-  ray.origin = camera.pos;
-  ray.dir = normalize(pixel_center - ray.origin);
-  return ray;
+vec3 rand_dir() {
+  float z = 2.0 * rand_float() - 1.0;
+  float l = sqrt(1.0 - z * z);
+  float theta = 2.0 * PI * rand_float();
+  return vec3(l * cos(theta), l * sin(theta), z);
 }
 
 // <-------------------------Ray-AABB-Intersection---------------------------->
@@ -243,67 +241,202 @@ void ray_scene_intersect(const Ray ray, inout IntersectInfo info) {
   }
 }
 
-// <-------------------------------Ray-color---------------------------------->
+// <-----------------------------Utility-------------------------------------->
 
 vec4 sample_texture(uint index, vec2 texcoord) {
   if (index == -1) return vec4(1.0);
   return texture(textures[nonuniformEXT(index)], texcoord);
 }
 
-// <-------------------------------Ray-color---------------------------------->
+void get_interpolated_data(IntersectInfo intersect_info, 
+    out vec3 pos, out vec3 normal, out vec2 texcoord, out uint material_idx) {
+  Vertex vertices[3] = triangles[intersect_info.triangle_idx];
+  float u = intersect_info.u;
+  float v = intersect_info.v;
+  float w = 1.0 - u - v;
 
-vec3 get_ray_color(Ray ray) {
+  pos = w * vertices[0].pos + u * vertices[1].pos + v * vertices[2].pos;
+  normal = w * vertices[0].normal + u * vertices[1].normal + v * vertices[2].normal;
+  texcoord = 
+    w * vec2(vertices[0].uv_u, vertices[0].uv_v) +
+    u * vec2(vertices[1].uv_u, vertices[1].uv_v) +
+    v * vec2(vertices[2].uv_u, vertices[2].uv_v);
+  material_idx = vertices[0].material_idx;
+}
+
+void get_material_data(uint material_idx, vec2 texcoord,
+    out vec3 base_color, out float alpha, out float metallic,
+    out float roughness, out vec3 emission, out float occlusion) {
+
+  Material mat = materials[material_idx];
+  
+  vec4 base_color_srgb = mat.base_color * sample_texture(mat.base_color_texture_idx, texcoord);
+  base_color = base_color_srgb.rgb;
+  base_color = pow(base_color, vec3(GAMMA));
+  alpha = base_color_srgb.a;
+
+  vec2 roughness_metallic = sample_texture(mat.metallic_roughness_texture_idx, texcoord).bg;
+  metallic = mat.metallic * roughness_metallic[0];
+  roughness = mat.roughness * roughness_metallic[1];
+
+  emission = mat.emissive_factor * sample_texture(mat.emissive_texture_idx, texcoord).rgb;
+  emission = pow(emission, vec3(GAMMA));
+
+  occlusion = 1.0 + mat.occlusion_strength * (sample_texture(mat.occlusion_texture_idx, texcoord).r - 1.0);
+}
+
+// <--------------------------------BRDF-------------------------------------->
+
+// float distribution_GGX(vec3 n, vec3 h, float a2) {
+//   float n_dot_h = max(dot(n, h), 0.0);
+//   if (n_dot_h == 0.0) return 0.0;
+//   float denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+//   denom = PI * denom * denom;
+//   return a2 / denom;
+// }
+
+// float geometry_smith1(vec3 n, vec3 h, vec3 x, float a2) {
+//   float n_dot_x = dot(n, x);
+//   float denom = abs(n_dot_x) + sqrt(a2 + (1.0 - a2) * n_dot_x * n_dot_x);
+//   return step(0.0, dot(h, x)) / denom;
+// }
+
+// float geometry_smith2(vec3 n, vec3 h, vec3 v, vec3 l, float a2) {
+//   return geometry_smith1(n, h, l, a2) * geometry_smith1(n, h, v, a2);
+// }
+
+// vec3 brdf(vec3 n, vec3 v, vec3 l, float metallic, float roughness, vec3 base_color) {
+//   float a2 = roughness * roughness;
+//   vec3 h = normalize(l + v);
+
+//   vec3 f0 = mix(vec3(0.04), base_color, metallic);
+//   vec3 f = f0 + (1.0 - f0) * pow(1.0 - abs(dot(v, h)), 5.0);
+
+//   vec3 diffuse = (1.0 - f) * (1.0 - metallic) * base_color / PI;
+//   vec3 specular = f * distribution_GGX(n, h, a2) * geometry_smith2(n, h, l, v, a2);
+//   return diffuse + specular;
+// }
+
+vec3 brdf(vec3 n, vec3 v, vec3 l, float metallic, float roughness, vec3 base_color) {
+  return base_color / PI;
+}
+
+// <----------------------------Lighting------------------------------------->
+
+vec3 direct_lighting(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, vec3 base_color) {
   vec3 color = vec3(0.0);
 
-  float current_alpha = 1.0;
-  const uint MAX_DEPTH = 4;
-  uint current_depth;
-  for (current_depth = 0; current_depth < MAX_DEPTH; ++current_depth) {
-    IntersectInfo intersect_info;
-    intersect_info.t = 1.0 / 0.0;
-    intersect_info.triangle_idx = -1;
-    ray_scene_intersect(ray, intersect_info);
+  for (uint i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) {
+    DirectionalLight light = directional_lights[i];
+    vec3 l = -light.dir;
 
-    if (intersect_info.triangle_idx == -1) {
-      color += current_alpha * bg_color;
-      break;
-    }
+    IntersectInfo info;
+    info.t = INFINITY;
+    info.triangle_idx = -1;
+    Ray ray;
+    ray.origin = pos + NORMAL_DELTA * n;
+    ray.dir = l;
+    ray_scene_intersect(ray, info);
+    if (info.triangle_idx != -1) continue;
 
-    Vertex vertices[3] = triangles[intersect_info.triangle_idx];
-    float u = intersect_info.u;
-    float v = intersect_info.v;
-    float w = 1.0 - u - v;
+    light.intensity *= (4.0 * PI / 683.0);
+    light.intensity /= LIGHT_INTENSITY_FACTOR;
+    vec3 radiance = light.color * light.intensity;
 
-    vec2 texcoords[3];
-    for (int i = 0; i < 3; ++i) {
-      texcoords[i] = vec2(vertices[i].uv_u, vertices[i].uv_v);
-    }
-    vec2 texcoord = w * texcoords[0] + u * texcoords[1] + v * texcoords[2];
-
-    Material mat = materials[vertices[0].material_idx];
-    vec4 base_color = mat.base_color;
-    vec4 sampled_color = sample_texture(mat.base_color_texture_idx, texcoord);
-    base_color *= sampled_color;
-
-    color += current_alpha * base_color.rgb * base_color.a;
-    current_alpha *= 1.0 - base_color.a;
-
-    if (base_color.a == 1.0) {
-      break;
-    }
-
-    vec3 pos = w * vertices[0].pos + u * vertices[1].pos + v * vertices[2].pos;
-    vec3 normal = w * vertices[0].normal + u * vertices[1].normal + v * vertices[2].normal;
-    if (dot(normal, ray.dir) < 0.0) normal *= -1.0;
-    float epsilon = 1e-3;
-    ray.origin = pos + epsilon * normal;
+    float n_dot_l = max(dot(n, l), 0.0);
+    color += radiance * brdf(n, v, l, metallic, roughness, base_color) * n_dot_l;
   }
 
-  if (current_depth == MAX_DEPTH) {
-    color += current_alpha * bg_color;
+  for (uint i = 0; i < POINT_LIGHT_COUNT; ++i) {
+    PointLight light = point_lights[i];
+    vec3 l = light.pos - pos;
+    float dist = length(l);
+    l /= dist;
+
+    IntersectInfo info;
+    info.t = INFINITY;
+    info.triangle_idx = -1;
+    Ray ray;
+    ray.origin = pos;
+    ray.dir = l;
+    ray_scene_intersect(ray, info);
+    if (info.triangle_idx != -1 && info.t < dist) continue;
+
+    float attenuation = 1.0 / (dist * dist);
+    light.intensity *= (4.0 * PI / 683.0);
+    light.intensity /= LIGHT_INTENSITY_FACTOR;
+    vec3 radiance = light.color * light.intensity * attenuation;
+
+    float n_dot_l = max(dot(n, l), 0.0);
+    color += radiance * brdf(n, v, l, metallic, roughness, base_color) * n_dot_l;
   }
 
   return color;
+}
+
+vec3 get_ray_color(Ray ray) {
+  vec3 final_color = vec3(0.0);
+  vec3 indirect = vec3(1.0);
+
+  const uint MAX_TRANSPARENCY_BOUNCES = 4;
+  uint transparency_bounces = 0;
+  const uint MAX_DIFFUSE_BOUNCES = 16;
+  uint diffuse_bounces = 0;
+
+  while (diffuse_bounces < MAX_DIFFUSE_BOUNCES) {
+    IntersectInfo intersect_info;
+    intersect_info.t = INFINITY;
+    intersect_info.triangle_idx = -1;
+    ray_scene_intersect(ray, intersect_info);
+    if (intersect_info.triangle_idx == -1) {
+      final_color += indirect * pow(bg_color, vec3(GAMMA));
+      break;
+    }
+
+    vec3 pos, normal;
+    vec2 texcoord;
+    uint material_idx;
+    get_interpolated_data(intersect_info, pos, normal, texcoord, material_idx);
+    if (dot(normal, ray.dir) > 0.0) normal *= -1.0;
+
+    vec3 base_color, emission;
+    float alpha, roughness, metallic, occlusion;
+    get_material_data(
+      material_idx, texcoord,
+      base_color, alpha, metallic,
+      roughness, emission, occlusion
+    );
+
+    vec3 color = direct_lighting(normal, -ray.dir, pos, metallic, roughness, base_color);
+    color += emission;
+    indirect *= occlusion;
+
+    if (alpha < 1.0 && transparency_bounces < MAX_TRANSPARENCY_BOUNCES) {
+      ++transparency_bounces;
+
+      final_color += alpha * color * indirect;
+      indirect *= (1.0 - alpha);
+
+      ray.origin = pos - NORMAL_DELTA * normal;
+
+    } else {
+      ++diffuse_bounces;
+
+      final_color += color * indirect;
+      
+      vec3 dir = rand_dir();
+      if (dot(dir, normal) < 0.0) dir *= -1.0;
+      dir = normalize(normal + dir);
+
+      float n_dot_l = max(dot(normal, dir), 0.0);
+      indirect *= brdf(normal, -ray.dir, dir, metallic, roughness, base_color) * PI;
+
+      ray.origin = pos + NORMAL_DELTA * normal;
+      ray.dir = dir;
+    }
+  }
+
+  return final_color;
 }
 
 // <---------------------------------Main------------------------------------->
@@ -317,10 +450,19 @@ void main() {
 
   vec3 color = vec3(0.0);
   for (uint i = 0; i < sample_count; ++i) {
-    Ray ray = get_ray_through_pixel(id);
+    vec3 pixel_center = camera.corner_pixel_pos + 
+      (id.x + rand_float() - 0.5) * camera.pixel_delta_u +
+      (id.y + rand_float() - 0.5) * camera.pixel_delta_v;
+
+    Ray ray;
+    ray.origin = camera.pos;
+    ray.dir = normalize(pixel_center - camera.pos);
+
     color += get_ray_color(ray);
   }
   color /= sample_count;
+
+  color = pow(color, vec3(1.0 / GAMMA));
 
   imageStore(result, id, vec4(color, 1.0));
 }

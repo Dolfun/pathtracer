@@ -10,7 +10,7 @@
 #include <tiny_gltf.h>
 
 constexpr Scene::Material default_material {
-  .base_color_factor = glm::vec4(0.25f, 0.25f, 0.25f, 1.0f),
+  .base_color_factor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f),
   .base_color_texture_index = -1,
   .metallic_factor = 0.0f,
   .roughness_factor = 1.0f,
@@ -428,9 +428,9 @@ void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transf
     glm::vec3 local_direction = glm::vec3(0.0f, 0.0f, -1.0f);
 
     Scene::DirectionalLight directional_light {
-      .direction = glm::vec3(transform * glm::vec4(local_direction, 0.0f)),
+      .color = color,
       .intensity = static_cast<float>(light.intensity),
-      .color = color
+      .direction = glm::vec3(transform * glm::vec4(local_direction, 0.0f))
     };
 
     scene.directional_lights.push_back(directional_light);
@@ -439,10 +439,9 @@ void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transf
     glm::vec3 position = transform[3];
 
     Scene::PointLight point_light {
-      .position = position,
-      .range = static_cast<float>(light.range),
       .color = color,
-      .intensity = static_cast<float>(light.intensity)
+      .intensity = static_cast<float>(light.intensity),
+      .position = position
     };
 
     scene.point_lights.push_back(point_light);

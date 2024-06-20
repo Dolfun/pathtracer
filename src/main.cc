@@ -19,8 +19,8 @@ int main() {
     std::uniform_int_distribution<std::uint32_t> dist;
 
     RenderConfig config {
-      .resolution_x = 1080,
-      .resolution_y = 1920,
+      .resolution_x = 1920,
+      .resolution_y = 1080,
       .seed = dist(engine),
       .sample_count = 128,
       .bg_color = { 0.239, 0.239, 0.239 },
@@ -28,13 +28,14 @@ int main() {
 
     Scene scene;
     timeit("load_gltf", [&] {
-      scene = load_gltf("sorceress.glb");
+      scene = load_gltf("untitled.glb");
     });
 
     auto [image, size] = renderer->render(scene, config);
     
-    timeit("stbi_write_bmp", [&] {
-      stbi_write_bmp("output.bmp", config.resolution_x, config.resolution_y, NR_CHANNELS, image);
+    timeit("stbi_write_png", [&] {
+      std::uint32_t stride = config.resolution_x * 4;
+      stbi_write_png("output.png", config.resolution_x, config.resolution_y, NR_CHANNELS, image, stride);
     });
 
     fmt::println("\nTriangle Count: {}", scene.triangle_indices.size());
