@@ -14,6 +14,7 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define INFINITY 3.4e+38
 #define NORMAL_DELTA 1e-3
 #define LIGHT_INTENSITY_FACTOR 10.0
+#define POINT_LIGHT_RADIUS 0.15
 
 // <--------------------------------Structs----------------------------------->
 
@@ -350,6 +351,9 @@ vec3 direct_lighting(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, 
 
   for (uint i = 0; i < POINT_LIGHT_COUNT; ++i) {
     PointLight light = point_lights[i];
+
+    light.pos += rand_dir() * POINT_LIGHT_RADIUS;
+
     vec3 l = light.pos - pos;
     float dist = length(l);
     l /= dist;

@@ -62,7 +62,7 @@ Set device_id to -1 to auto-select device.
 
 ### Suzanne
 
-![suzanne](https://i.imgur.com/J5N4zR3.png)
+![suzanne](https://i.imgur.com/PS4tmhG.png)
 
 ### Cornell Box
 
