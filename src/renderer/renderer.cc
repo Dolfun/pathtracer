@@ -4,9 +4,9 @@
 #include <fmt/core.h>
 #include <fmt/color.h>
 
-Renderer::Renderer(const std::uint32_t device_index) {
+Renderer::Renderer(const std::uint32_t device_id) {
   create_instance();
-  select_physical_device(device_index);
+  select_physical_device(device_id);
   select_queue_family_indices();
   create_logical_device();
 }
@@ -51,11 +51,11 @@ void Renderer::create_instance() {
 #endif
 }
 
-void Renderer::select_physical_device(const std::uint32_t device_index) {
+void Renderer::select_physical_device(const std::uint32_t device_id) {
   vk::raii::PhysicalDevices physical_devices { *instance };
 
-  if (device_index > 0 && device_index < physical_devices.size()) {
-    physical_device = std::make_unique<vk::raii::PhysicalDevice>(physical_devices[device_index]);
+  if (device_id > 0 && device_id < physical_devices.size()) {
+    physical_device = std::make_unique<vk::raii::PhysicalDevice>(physical_devices[device_id]);
     return;
   }
 

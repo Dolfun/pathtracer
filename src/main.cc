@@ -35,12 +35,12 @@ int main(int argc, char** argv) {
       },
     };
 
-    std::uint32_t device_index = -1;
-    if (config.contains("device_index")) {
-      device_index = config["device_index"];
+    std::uint32_t device_id = -1;
+    if (config.contains("device_id")) {
+      device_id = config["device_id"];
     }
 
-    Renderer renderer { device_index };
+    Renderer renderer { device_id };
 
     std::string gltf_path = config["gltf_path"];
     Scene scene;

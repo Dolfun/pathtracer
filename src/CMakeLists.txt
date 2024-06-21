@@ -5,9 +5,9 @@ add_subdirectory(gltf_loader)
 add_subdirectory(bvh)
 add_subdirectory(renderer)
 
-add_executable(main main.cc)
+add_executable(pathtracer main.cc)
 target_link_libraries(
-  main
+  pathtracer
   PRIVATE
   stb
   renderer

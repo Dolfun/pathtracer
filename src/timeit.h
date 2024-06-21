@@ -3,13 +3,13 @@
 #include <fmt/chrono.h>
 
 inline void timeit(const std::string& info, auto&& f) {
+	fmt::print("{:<16} -> ", info);
+
 	using namespace std::chrono;
 
 	auto t1 = steady_clock::now();
 	std::forward<decltype(f)>(f)();
 	auto t2 = steady_clock::now();
-
-	fmt::print("{:<16} -> ", info);
 	
 	auto duration = duration_cast<milliseconds>(t2 - t1);
 	if (duration.count() < 100) {
