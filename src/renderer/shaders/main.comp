@@ -13,7 +13,7 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define GAMMA 2.2
 #define INFINITY 3.4e+38
 #define NORMAL_DELTA 1e-3
-#define LIGHT_INTENSITY_FACTOR 25.0
+#define LIGHT_INTENSITY_FACTOR 10.0
 
 // <--------------------------------Structs----------------------------------->
 
@@ -281,6 +281,7 @@ void get_material_data(uint material_idx, vec2 texcoord,
 
   emission = mat.emissive_factor * sample_texture(mat.emissive_texture_idx, texcoord).rgb;
   emission = pow(emission, vec3(GAMMA));
+  emission *= LIGHT_INTENSITY_FACTOR;
 
   occlusion = 1.0 + mat.occlusion_strength * (sample_texture(mat.occlusion_texture_idx, texcoord).r - 1.0);
 }

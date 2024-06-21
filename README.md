@@ -64,6 +64,10 @@ Set device_id to -1 to auto-select device.
 
 ![suzanne](https://i.imgur.com/J5N4zR3.png)
 
+### Cornell Box
+
+![cornell box](https://i.imgur.com/SCCgPDY.png)
+
 ### [Forest House](https://sketchfab.com/3d-models/forest-house-52429e4ef7bf4deda1309364a2cda86f)
 
 ![forest house](https://i.imgur.com/DW66g5C.png)
