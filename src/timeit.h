@@ -19,7 +19,6 @@ inline void timeit(const std::string& info, auto&& f) {
 		fmt::println("{:.2}s", duration.count() / 1000.0f);
 
 	} else {
-		duration = duration_cast<seconds>(duration);
-		fmt::println("{}", duration);
+		fmt::println("{}s", duration.count() / 1000);
 	}
 }
