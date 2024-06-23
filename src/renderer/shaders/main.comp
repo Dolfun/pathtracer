@@ -13,8 +13,9 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define GAMMA 2.2
 #define INFINITY 3.4e+38
 #define NORMAL_DELTA 1e-3
-#define LIGHT_INTENSITY_FACTOR 10.0
-#define POINT_LIGHT_RADIUS 0.15
+#define POINT_LIGHT_RADIUS 0.2
+#define MAX_TRANSPARENCY_BOUNCES 4
+#define MAX_LIGHT_BOUNCES 8
 
 // <--------------------------------Structs----------------------------------->
 
@@ -222,6 +223,8 @@ void ray_scene_intersect(const Ray ray, inout IntersectInfo info) {
       float dist_left, dist_right;
       bool left_intersected  = ray_aabb_intersect(ray, left.aabb_min, left.aabb_max, dist_left);
       bool right_intersected = ray_aabb_intersect(ray, right.aabb_min, right.aabb_max, dist_right);
+      left_intersected  = left_intersected  && (dist_left  < info.t);
+      right_intersected = right_intersected && (dist_right < info.t);
 
       if (left_intersected && right_intersected) {
         if (dist_left < dist_right) {
@@ -271,63 +274,63 @@ void get_material_data(uint material_idx, vec2 texcoord,
 
   Material mat = materials[material_idx];
   
-  vec4 base_color_srgb = mat.base_color * sample_texture(mat.base_color_texture_idx, texcoord);
-  base_color = base_color_srgb.rgb;
-  base_color = pow(base_color, vec3(GAMMA));
-  alpha = base_color_srgb.a;
+  vec4 base_color_srgb = sample_texture(mat.base_color_texture_idx, texcoord);
+  base_color = mat.base_color.rgb * pow(base_color_srgb.rgb, vec3(GAMMA));
+  alpha = mat.base_color.a * base_color_srgb.a;
 
   vec2 roughness_metallic = sample_texture(mat.metallic_roughness_texture_idx, texcoord).bg;
   metallic = mat.metallic * roughness_metallic[0];
   roughness = mat.roughness * roughness_metallic[1];
 
-  emission = mat.emissive_factor * sample_texture(mat.emissive_texture_idx, texcoord).rgb;
-  emission = pow(emission, vec3(GAMMA));
-  emission *= LIGHT_INTENSITY_FACTOR;
+  emission = mat.emissive_factor * pow(sample_texture(mat.emissive_texture_idx, texcoord).rgb, vec3(GAMMA));
 
   occlusion = 1.0 + mat.occlusion_strength * (sample_texture(mat.occlusion_texture_idx, texcoord).r - 1.0);
 }
 
 // <--------------------------------BRDF-------------------------------------->
 
-// float distribution_GGX(vec3 n, vec3 h, float a2) {
-//   float n_dot_h = max(dot(n, h), 0.0);
-//   if (n_dot_h == 0.0) return 0.0;
-//   float denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
-//   denom = PI * denom * denom;
-//   return a2 / denom;
-// }
+float distribution_GGX(vec3 n, vec3 h, float a2) {
+  float n_dot_h = max(dot(n, h), 0.0);
+  if (n_dot_h == 0.0) return 0.0;
 
-// float geometry_smith1(vec3 n, vec3 h, vec3 x, float a2) {
-//   float n_dot_x = dot(n, x);
-//   float denom = abs(n_dot_x) + sqrt(a2 + (1.0 - a2) * n_dot_x * n_dot_x);
-//   return step(0.0, dot(h, x)) / denom;
-// }
+  float denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+  denom = PI * denom * denom;
+  
+  float epsilon = 1e-6;
+  return (a2 + epsilon) / (denom + epsilon);
+}
 
-// float geometry_smith2(vec3 n, vec3 h, vec3 v, vec3 l, float a2) {
-//   return geometry_smith1(n, h, l, a2) * geometry_smith1(n, h, v, a2);
-// }
+float geometry_smith1(vec3 n, vec3 h, vec3 x, float a2) {
+  if (dot(h, x) <= 0.0) return 0.0;
 
-// vec3 brdf(vec3 n, vec3 v, vec3 l, float metallic, float roughness, vec3 base_color) {
-//   float a2 = roughness * roughness;
-//   vec3 h = normalize(l + v);
+  float n_dot_x = dot(n, x);
+  float denom = abs(n_dot_x) + sqrt(a2 + (1.0 - a2) * n_dot_x * n_dot_x);
+  return 1.0 / denom;
+}
 
-//   vec3 f0 = mix(vec3(0.04), base_color, metallic);
-//   vec3 f = f0 + (1.0 - f0) * pow(1.0 - abs(dot(v, h)), 5.0);
-
-//   vec3 diffuse = (1.0 - f) * (1.0 - metallic) * base_color / PI;
-//   vec3 specular = f * distribution_GGX(n, h, a2) * geometry_smith2(n, h, l, v, a2);
-//   return diffuse + specular;
-// }
+float geometry_smith2(vec3 n, vec3 h, vec3 v, vec3 l, float a2) {
+  return geometry_smith1(n, h, l, a2) * geometry_smith1(n, h, v, a2);
+}
 
 vec3 brdf(vec3 n, vec3 v, vec3 l, float metallic, float roughness, vec3 base_color) {
-  return base_color / PI;
+  float a = roughness * roughness;
+  float a2 = a * a;
+  vec3 h = normalize(l + v);
+
+  vec3 f0 = mix(vec3(0.04), base_color, metallic);
+  vec3 f = f0 + (1.0 - f0) * pow(1.0 - abs(dot(v, h)), 5.0);
+
+  vec3 diffuse = (1.0 - f) * (1.0 - metallic) * base_color / PI;
+  vec3 specular = f * distribution_GGX(n, h, a2) * geometry_smith2(n, h, l, v, a2);
+  return diffuse + specular;
 }
 
 // <----------------------------Lighting------------------------------------->
 
-vec3 direct_lighting(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, vec3 base_color) {
+vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, vec3 base_color) {
   vec3 color = vec3(0.0);
 
+  // Broken
   for (uint i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) {
     DirectionalLight light = directional_lights[i];
     vec3 l = -light.dir;
@@ -342,7 +345,6 @@ vec3 direct_lighting(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, 
     if (info.triangle_idx != -1) continue;
 
     light.intensity *= (4.0 * PI / 683.0);
-    light.intensity /= LIGHT_INTENSITY_FACTOR;
     vec3 radiance = light.color * light.intensity;
 
     float n_dot_l = max(dot(n, l), 0.0);
@@ -355,8 +357,11 @@ vec3 direct_lighting(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, 
     light.pos += rand_dir() * POINT_LIGHT_RADIUS;
 
     vec3 l = light.pos - pos;
-    float dist = length(l);
-    l /= dist;
+    float dist2 = dot(l, l);
+    l = normalize(l);
+
+    float n_dot_l = max(dot(n, l), 0.0);
+    if (n_dot_l == 0.0) continue;
 
     IntersectInfo info;
     info.t = INFINITY;
@@ -365,36 +370,30 @@ vec3 direct_lighting(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, 
     ray.origin = pos;
     ray.dir = l;
     ray_scene_intersect(ray, info);
-    if (info.triangle_idx != -1 && info.t < dist) continue;
+    if (info.triangle_idx != -1 && info.t * info.t < dist2) continue;
 
-    float attenuation = 1.0 / (dist * dist);
-    light.intensity *= (4.0 * PI / 683.0);
-    light.intensity /= LIGHT_INTENSITY_FACTOR;
+    float pdf = dist2 / (n_dot_l * PI * POINT_LIGHT_RADIUS * POINT_LIGHT_RADIUS);
+    float attenuation = 1.0 / dist2;
     vec3 radiance = light.color * light.intensity * attenuation;
-
-    float n_dot_l = max(dot(n, l), 0.0);
-    color += radiance * brdf(n, v, l, metallic, roughness, base_color) * n_dot_l;
+    color += radiance * brdf(n, v, l, metallic, roughness, base_color) * n_dot_l / pdf;
   }
 
   return color;
 }
 
 vec3 get_ray_color(Ray ray) {
-  vec3 final_color = vec3(0.0);
+  vec3 color = vec3(0.0);
   vec3 indirect = vec3(1.0);
 
-  const uint MAX_TRANSPARENCY_BOUNCES = 4;
   uint transparency_bounces = 0;
-  const uint MAX_DIFFUSE_BOUNCES = 16;
-  uint diffuse_bounces = 0;
-
-  while (diffuse_bounces < MAX_DIFFUSE_BOUNCES) {
+  uint light_bounces = 0;
+  while (light_bounces < MAX_LIGHT_BOUNCES) {
     IntersectInfo intersect_info;
     intersect_info.t = INFINITY;
     intersect_info.triangle_idx = -1;
     ray_scene_intersect(ray, intersect_info);
     if (intersect_info.triangle_idx == -1) {
-      final_color += indirect * pow(bg_color, vec3(GAMMA));
+      color += indirect * pow(bg_color, vec3(GAMMA));
       break;
     }
 
@@ -412,36 +411,33 @@ vec3 get_ray_color(Ray ray) {
       roughness, emission, occlusion
     );
 
-    vec3 color = direct_lighting(normal, -ray.dir, pos, metallic, roughness, base_color);
-    color += emission;
+    vec3 direct_lighting = emission + sample_direct(normal, -ray.dir, pos, metallic, roughness, base_color);
+    color += alpha * direct_lighting * indirect;
     indirect *= occlusion;
 
     if (alpha < 1.0 && transparency_bounces < MAX_TRANSPARENCY_BOUNCES) {
       ++transparency_bounces;
 
-      final_color += alpha * color * indirect;
       indirect *= (1.0 - alpha);
-
       ray.origin = pos - NORMAL_DELTA * normal;
 
     } else {
-      ++diffuse_bounces;
+      ++light_bounces;
 
-      final_color += color * indirect;
-      
       vec3 dir = rand_dir();
       if (dot(dir, normal) < 0.0) dir *= -1.0;
       dir = normalize(normal + dir);
 
       float n_dot_l = max(dot(normal, dir), 0.0);
-      indirect *= brdf(normal, -ray.dir, dir, metallic, roughness, base_color) * PI;
+      float pdf = n_dot_l / PI;
+      indirect *= brdf(normal, -ray.dir, dir, metallic, roughness, base_color) * n_dot_l / pdf;
 
       ray.origin = pos + NORMAL_DELTA * normal;
       ray.dir = dir;
     }
   }
 
-  return final_color;
+  return color;
 }
 
 // <---------------------------------Main------------------------------------->

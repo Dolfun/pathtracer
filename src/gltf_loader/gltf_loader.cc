@@ -269,6 +269,13 @@ void Loader::process_material(const tinygltf::Material& gltf_material) {
     .emissive_texture_index           = gltf_material.emissiveTexture.index
   };
 
+  const std::string KHR_materials_emissive_strength = "KHR_materials_emissive_strength";
+  auto it = gltf_material.extensions.find(KHR_materials_emissive_strength);
+  if (it != gltf_material.extensions.end()) {
+    double strength = it->second.Get("emissiveStrength").GetNumberAsDouble();
+    material.emissive_factor *= static_cast<float>(strength);
+  }
+
   scene.materials.push_back(material);
 }
 
