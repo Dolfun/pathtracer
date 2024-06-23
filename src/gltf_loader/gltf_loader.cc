@@ -431,13 +431,15 @@ void Loader::process_primitive(const tinygltf::Primitive& primitive, const glm::
 void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transform) {
   glm::vec3 color = { light.color[0], light.color[1], light.color[2] };
 
+  float light_intensity = static_cast<float>(light.intensity) * (4.0 * glm::pi<float>() / 683.0);
+
   if (light.type == "directional") {
     glm::vec3 local_direction = glm::vec3(0.0f, 0.0f, -1.0f);
 
     Scene::DirectionalLight directional_light {
       .color = color,
-      .intensity = static_cast<float>(light.intensity),
-      .direction = glm::vec3(transform * glm::vec4(local_direction, 0.0f))
+      .intensity = light_intensity,
+      .direction = glm::normalize(glm::vec3(transform * glm::vec4(local_direction, 0.0f)))
     };
 
     scene.directional_lights.push_back(directional_light);
@@ -447,7 +449,7 @@ void Loader::process_light(const tinygltf::Light& light, const glm::mat4& transf
 
     Scene::PointLight point_light {
       .color = color,
-      .intensity = static_cast<float>(light.intensity),
+      .intensity = light_intensity,
       .position = position
     };
 
