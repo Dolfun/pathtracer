@@ -16,6 +16,7 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define POINT_LIGHT_RADIUS 0.2
 #define MAX_TRANSPARENCY_BOUNCES 4
 #define MAX_LIGHT_BOUNCES 8
+const float epsilon = 1e-6;
 
 // <--------------------------------Structs----------------------------------->
 
@@ -147,6 +148,19 @@ vec3 rand_dir() {
   return vec3(l * cos(theta), l * sin(theta), z);
 }
 
+vec3 hemisphere_cosine_sample() {
+  float phi = 2.0 * PI * rand_float();
+  float r = rand_float();
+  return vec3(cos(phi) * sqrt(r), sin(phi) * sqrt(r), sqrt(1.0 - r));
+}
+
+mat3 orthogonal_matrix(vec3 w) {
+  vec3 a = (abs(w.x) > 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0));
+  vec3 v = normalize(cross(w, a));
+  vec3 u = cross(w, v);
+  return mat3(u, v, w);
+}
+
 // <-------------------------Ray-AABB-Intersection---------------------------->
 
 bool ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max, out float t) {
@@ -179,7 +193,6 @@ void ray_triangle_intersect(
   vec3 edge2 = pos[2] - pos[0];
   vec3 ray_cross_edge2 = cross(ray.dir, edge2);
   float det = dot(edge1, ray_cross_edge2);
-  const float epsilon = 1e-6;
   if (abs(det) < epsilon) return;
 
   float inv_det = 1.0 / det;
@@ -260,7 +273,7 @@ void get_interpolated_data(IntersectInfo intersect_info,
   float w = 1.0 - u - v;
 
   pos = w * vertices[0].pos + u * vertices[1].pos + v * vertices[2].pos;
-  normal = w * vertices[0].normal + u * vertices[1].normal + v * vertices[2].normal;
+  normal = normalize(w * vertices[0].normal + u * vertices[1].normal + v * vertices[2].normal);
   texcoord = 
     w * vec2(vertices[0].uv_u, vertices[0].uv_v) +
     u * vec2(vertices[1].uv_u, vertices[1].uv_v) +
@@ -296,7 +309,6 @@ float distribution_GGX(vec3 n, vec3 h, float a2) {
   float denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
   denom = PI * denom * denom;
   
-  float epsilon = 1e-6;
   return (a2 + epsilon) / (denom + epsilon);
 }
 
@@ -325,7 +337,7 @@ vec3 brdf(vec3 n, vec3 v, vec3 l, float metallic, float roughness, vec3 base_col
   return diffuse + specular;
 }
 
-// <----------------------------Lighting------------------------------------->
+// <--------------------------Direct-Lighting--------------------------------->
 
 vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, vec3 base_color) {
   vec3 color = vec3(0.0);
@@ -380,6 +392,8 @@ vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, ve
   return color;
 }
 
+// <-----------------------------Path-Tracing--------------------------------->
+
 vec3 get_ray_color(Ray ray) {
   vec3 color = vec3(0.0);
   vec3 indirect = vec3(1.0);
@@ -396,21 +410,21 @@ vec3 get_ray_color(Ray ray) {
       break;
     }
 
-    vec3 pos, normal;
-    vec2 texcoord;
-    uint material_idx;
-    get_interpolated_data(intersect_info, pos, normal, texcoord, material_idx);
-    if (dot(normal, ray.dir) > 0.0) normal *= -1.0;
+    vec3 pos, n;
+    vec2 uv;
+    uint mat_idx;
+    get_interpolated_data(intersect_info, pos, n, uv, mat_idx);
+    if (dot(n, ray.dir) > 0.0) n *= -1.0;
 
     vec3 base_color, emission;
     float alpha, roughness, metallic, occlusion;
     get_material_data(
-      material_idx, texcoord,
+      mat_idx, uv,
       base_color, alpha, metallic,
       roughness, emission, occlusion
     );
 
-    vec3 direct_lighting = emission + sample_direct(normal, -ray.dir, pos, metallic, roughness, base_color);
+    vec3 direct_lighting = emission + sample_direct(n, -ray.dir, pos, metallic, roughness, base_color);
     color += alpha * direct_lighting * indirect;
     indirect *= occlusion;
 
@@ -418,20 +432,20 @@ vec3 get_ray_color(Ray ray) {
       ++transparency_bounces;
 
       indirect *= (1.0 - alpha);
-      ray.origin = pos - NORMAL_DELTA * normal;
+      ray.origin = pos - NORMAL_DELTA * n;
 
     } else {
       ++light_bounces;
 
-      vec3 dir = rand_dir();
-      if (dot(dir, normal) < 0.0) dir *= -1.0;
-      dir = normalize(normal + dir);
+      mat3 local_transform = orthogonal_matrix(n);
+      vec3 local_point = hemisphere_cosine_sample();
+      vec3 dir = normalize(local_transform * local_point);
 
-      float n_dot_l = max(dot(normal, dir), 0.0);
+      float n_dot_l = max(dot(n, dir), 0.0);
       float pdf = n_dot_l / PI;
-      indirect *= brdf(normal, -ray.dir, dir, metallic, roughness, base_color) * n_dot_l / pdf;
+      indirect *= brdf(n, -ray.dir, dir, metallic, roughness, base_color) * n_dot_l / pdf;
 
-      ray.origin = pos + NORMAL_DELTA * normal;
+      ray.origin = pos + NORMAL_DELTA * n;
       ray.dir = dir;
     }
   }
