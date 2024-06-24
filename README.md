@@ -10,7 +10,7 @@ A pathtracer made using C++ and Vulkan.
 - Uses Vulkan compute shaders for GPU acceleration
 - Uses binned BVH with surface area heuristics
 - Cross platform support: Windows and Linux
-- Cross GPU Vendor support: Nvidia and AMD
+- Cross GPU Vendor support: Nvidia, AMD and Intel.
 
 ## Building
 
@@ -37,19 +37,19 @@ A pathtracer made using C++ and Vulkan.
 ### List devices
 
 ```console
-> pathtracer list_devices
+> ./pathtracer list_devices
 ```
 
 ### Rendering
 
 ``` console
-> pathtracer config.json
+> ./pathtracer config.json
 ```
 
 or
 
  ```console
-> pathtracer
+> ./pathtracer
 ```
 
 This will use config.json as default config file.
@@ -68,6 +68,7 @@ This will use config.json as default config file.
 ```
 
 Set device_id to -1 to auto-select device.
+You can also use HEX color as bg_color.
 
 ## Samples
 
