@@ -10,6 +10,7 @@ A pathtracer created using C++ and Vulkan.
 - Uses Vulkan compute shaders for GPU acceleration
 - Uses binned BVH with surface area heuristics
 - Cross platform: Windows and Linux
+- Cross GPU Vendor: AMD and Nvidia
 
 ## Building
 
