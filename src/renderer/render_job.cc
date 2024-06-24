@@ -852,10 +852,10 @@ PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
   glm::vec3 pixel_delta_u = viewport_u / resolution_x;
   glm::vec3 pixel_delta_v = viewport_v / resolution_y;
   glm::vec3 viewport_upper_left = camera.position - focal_length * w - 0.5f * (viewport_u + viewport_v);
-  glm::vec3 corner_pixel_pos = viewport_upper_left + 0.5f * (pixel_delta_u + pixel_delta_v);
+  glm::vec3 corner_pixel_pos = viewport_upper_left;
 
-  this->camera = {
-    .position = camera.position,
+  this->viewport = {
+    .camera_position = camera.position,
     .pixel_delta_u = pixel_delta_u,
     .pixel_delta_v = pixel_delta_v,
     .corner_pixel_pos = corner_pixel_pos

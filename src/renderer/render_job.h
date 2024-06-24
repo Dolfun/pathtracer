@@ -22,12 +22,12 @@ struct alignas(16) PackedBVHNode {
 struct PushConstants {
   PushConstants(const RenderConfig&, const Scene&);
 
-  struct Camera {
-    glm::vec3 position;
+  struct Viewport {
+    glm::vec3 camera_position;
     alignas(16) glm::vec3 pixel_delta_u;
     alignas(16) glm::vec3 pixel_delta_v;
     alignas(16) glm::vec3 corner_pixel_pos;
-  } camera;
+  } viewport;
 
   std::uint32_t resolution_x, resolution_y;
   std::uint32_t seed;

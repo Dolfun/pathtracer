@@ -66,8 +66,8 @@ struct PointLight {
   vec3 pos;
 };
 
-struct Camera {
-  vec3 pos;
+struct Viewport {
+  vec3 camera_pos;
   vec3 pixel_delta_u, pixel_delta_v;
   vec3 corner_pixel_pos;
 };
@@ -114,7 +114,7 @@ layout (set = 0, binding = 6) uniform sampler2D textures[];
 layout (set = 0, binding = 7, rgba8) uniform writeonly image2D result;
 
 layout (push_constant) uniform constant {
-  Camera camera;
+  Viewport viewport;
   uint resolution_x, resolution_y;
   uint seed;
   uint sample_count;
@@ -500,24 +500,27 @@ void main() {
 
   vec3 color = vec3(0.0);
   uint nan_count = 0;
-  for (uint i = 0; i < sample_count; ++i) {
-    vec3 pixel_center = camera.corner_pixel_pos + 
-      (id.x + rand_float() - 0.5) * camera.pixel_delta_u +
-      (id.y + rand_float() - 0.5) * camera.pixel_delta_v;
+  const uint sqrt_sample_count = int(sqrt(sample_count));
+  for (uint sub_i = 0; sub_i < sqrt_sample_count; ++sub_i) {
+    for (uint sub_j = 0; sub_j < sqrt_sample_count; ++sub_j) {
+      vec3 pixel_center = viewport.corner_pixel_pos + 
+        (id.x + (sub_i + rand_float()) / sqrt_sample_count) * viewport.pixel_delta_u +
+        (id.y + (sub_j + rand_float()) / sqrt_sample_count) * viewport.pixel_delta_v;
 
-    Ray ray;
-    ray.origin = camera.pos;
-    ray.dir = normalize(pixel_center - camera.pos);
+      Ray ray;
+      ray.origin = viewport.camera_pos;
+      ray.dir = normalize(pixel_center - viewport.camera_pos);
 
-    vec3 ray_color = get_ray_color(ray);
-    if (isnan(ray_color.x) || isnan(ray_color.y) || isnan(ray_color.z)) {
-      ++nan_count;
-    } else {
-      color += ray_color;
+      vec3 ray_color = get_ray_color(ray);
+      if (isnan(ray_color.x) || isnan(ray_color.y) || isnan(ray_color.z)) {
+        ++nan_count;
+      } else {
+        color += ray_color;
+      }
     }
   }
-  color /= (sample_count - nan_count);
-
+  
+  color /= (sqrt_sample_count * sqrt_sample_count - nan_count);
   color = pow(color, vec3(1.0 / GAMMA));
 
   imageStore(result, id, vec4(color, 1.0));
