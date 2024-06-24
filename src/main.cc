@@ -28,12 +28,32 @@ int main(int argc, char** argv) {
       .resolution_x = config["resolution_x"],
       .resolution_y = config["resolution_y"],
       .sample_count = config["sample_count"],
-      .bg_color = {
+      
+    };
+
+    if (config["bg_color"].is_array()) {
+      render_config.bg_color = {
         config["bg_color"][0], 
         config["bg_color"][1], 
         config["bg_color"][2]
-      },
-    };
+      };
+
+    } else if (config["bg_color"].is_string()) {
+      std::string hex = config["bg_color"];
+      std::stringstream ss;
+      ss << std::hex << hex.substr(1);
+      unsigned int hexValue;
+      ss >> hexValue;
+      
+      int r = (hexValue >> 16) & 0xFF;
+      int g = (hexValue >> 8) & 0xFF;
+      int b = hexValue & 0xFF;
+
+      render_config.bg_color = glm::vec3(r, g, b) / 255.0f;
+    
+    } else {
+      throw std::runtime_error("Invalid bg_color format.");
+    }
 
     std::uint32_t device_id = -1;
     if (config.contains("device_id")) {
