@@ -1,6 +1,5 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
-
 // <----------------------Specialization Constants---------------------------->
 
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
@@ -15,7 +14,7 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define NORMAL_DELTA 1e-3
 #define POINT_LIGHT_RADIUS 0.2
 #define MAX_TRANSPARENCY_BOUNCES 4
-#define MAX_LIGHT_BOUNCES 8
+#define MAX_LIGHT_BOUNCES 4
 const float epsilon = 1e-6;
 
 // <--------------------------------Structs----------------------------------->
@@ -119,7 +118,7 @@ layout (push_constant) uniform constant {
   uint resolution_x, resolution_y;
   uint seed;
   uint sample_count;
-  vec3 bg_color;
+  vec3 bg_color_srgb;
 };
 
 // <----------------------------------RNG------------------------------------->
@@ -146,12 +145,6 @@ vec3 rand_dir() {
   float l = sqrt(1.0 - z * z);
   float theta = 2.0 * PI * rand_float();
   return vec3(l * cos(theta), l * sin(theta), z);
-}
-
-vec3 hemisphere_cosine_sample() {
-  float phi = 2.0 * PI * rand_float();
-  float r = rand_float();
-  return vec3(cos(phi) * sqrt(r), sin(phi) * sqrt(r), sqrt(1.0 - r));
 }
 
 mat3 orthogonal_matrix(vec3 w) {
@@ -302,14 +295,12 @@ void get_material_data(uint material_idx, vec2 texcoord,
 
 // <--------------------------------BRDF-------------------------------------->
 
-float distribution_GGX(vec3 n, vec3 h, float a2) {
-  float n_dot_h = max(dot(n, h), 0.0);
-  if (n_dot_h == 0.0) return 0.0;
+float distribution_GGX(float n_dot_h, float a2) {
+  if (a2 < epsilon && n_dot_h > 1.0 - epsilon) return 1.0;
 
   float denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
   denom = PI * denom * denom;
-  
-  return (a2 + epsilon) / (denom + epsilon);
+  return a2 / denom;
 }
 
 float geometry_smith1(vec3 n, vec3 h, vec3 x, float a2) {
@@ -324,22 +315,51 @@ float geometry_smith2(vec3 n, vec3 h, vec3 v, vec3 l, float a2) {
   return geometry_smith1(n, h, l, a2) * geometry_smith1(n, h, v, a2);
 }
 
-vec3 brdf(vec3 n, vec3 v, vec3 l, float metallic, float roughness, vec3 base_color) {
-  float a = roughness * roughness;
-  float a2 = a * a;
+vec3 microfacet_brdf(vec3 n, vec3 v, vec3 l, float metal, float a2, vec3 base_color) {
   vec3 h = normalize(l + v);
+  float n_dot_h = max(dot(n, h), epsilon);
 
-  vec3 f0 = mix(vec3(0.04), base_color, metallic);
+  vec3 f0 = mix(vec3(0.04), base_color, metal);
   vec3 f = f0 + (1.0 - f0) * pow(1.0 - abs(dot(v, h)), 5.0);
 
-  vec3 diffuse = (1.0 - f) * (1.0 - metallic) * base_color / PI;
-  vec3 specular = f * distribution_GGX(n, h, a2) * geometry_smith2(n, h, l, v, a2);
+  vec3 diffuse = (1.0 - f) * (1.0 - metal) * base_color / PI;
+  vec3 specular = f * distribution_GGX(n_dot_h, a2) * geometry_smith2(n, h, l, v, a2);
   return diffuse + specular;
 }
 
+// <------------------------------Sampling------------------------------------>
+
+vec3 diffuse_sample(vec3 n, out float pdf) {
+  float phi = 2.0 * PI * rand_float();
+  float rand = rand_float();
+
+  vec3 l_local = vec3(cos(phi) * sqrt(rand), sin(phi) * sqrt(rand), sqrt(1.0 - rand));
+  vec3 l = orthogonal_matrix(n) * l_local;
+
+  float n_dot_l = max(dot(n, l), 0.0);
+  pdf = n_dot_l / PI;
+
+  return l;
+}
+
+vec3 microfacet_sample(vec3 n, vec3 v, float a2, out float pdf) {
+  float phi = 2.0 * PI * rand_float();
+  float rand = rand_float();
+  float cos2_theta = clamp((1.0 - rand) / (rand * (a2 - 1) + 1), 0.0, 1.0);
+  float cos_theta = sqrt(cos2_theta);
+  float sin_theta = sqrt(1.0 - cos2_theta);
+
+  vec3 h_local = vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+  vec3 h = normalize(orthogonal_matrix(n) * h_local);
+  vec3 l = reflect(-v, h);
+
+  pdf = distribution_GGX(cos_theta, a2) * cos_theta / (4.0 * abs(dot(h, l)));
+
+  return l;
+}
 // <--------------------------Direct-Lighting--------------------------------->
 
-vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, vec3 base_color) {
+vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 base_color) {
   vec3 color = vec3(0.0);
 
   for (uint i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) {
@@ -361,7 +381,7 @@ vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, ve
     light.intensity *= (4.0 * PI / 683.0);
     vec3 radiance = light.color * light.intensity;
 
-    color += radiance * brdf(n, v, l, metallic, roughness, base_color) * n_dot_l;
+    color += radiance * microfacet_brdf(n, v, l, metal, a2, base_color) * n_dot_l;
   }
 
   for (uint i = 0; i < POINT_LIGHT_COUNT; ++i) {
@@ -386,7 +406,7 @@ vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, ve
 
     float pdf = dist2 / (n_dot_l * PI * POINT_LIGHT_RADIUS * POINT_LIGHT_RADIUS);
     vec3 radiance = light.color * light.intensity;
-    color += radiance * brdf(n, v, l, metallic, roughness, base_color) * n_dot_l / pdf;
+    color += radiance * microfacet_brdf(n, v, l, metal, a2, base_color) * n_dot_l / pdf;
   }
 
   return color;
@@ -395,6 +415,7 @@ vec3 sample_direct(vec3 n, vec3 v, vec3 pos, float metallic, float roughness, ve
 // <-----------------------------Path-Tracing--------------------------------->
 
 vec3 get_ray_color(Ray ray) {
+  const vec3 bg_color = pow(bg_color_srgb, vec3(GAMMA));
   vec3 color = vec3(0.0);
   vec3 indirect = vec3(1.0);
 
@@ -406,7 +427,7 @@ vec3 get_ray_color(Ray ray) {
     intersect_info.triangle_idx = -1;
     ray_scene_intersect(ray, intersect_info);
     if (intersect_info.triangle_idx == -1) {
-      color += indirect * pow(bg_color, vec3(GAMMA));
+      color += indirect * bg_color;
       break;
     }
 
@@ -417,14 +438,16 @@ vec3 get_ray_color(Ray ray) {
     if (dot(n, ray.dir) > 0.0) n *= -1.0;
 
     vec3 base_color, emission;
-    float alpha, roughness, metallic, occlusion;
+    float alpha, roughness, metal, occlusion;
     get_material_data(
       mat_idx, uv,
-      base_color, alpha, metallic,
+      base_color, alpha, metal,
       roughness, emission, occlusion
     );
+    float a = roughness * roughness;
+    float a2 = a * a;
 
-    vec3 direct_lighting = emission + sample_direct(n, -ray.dir, pos, metallic, roughness, base_color);
+    vec3 direct_lighting = emission + sample_direct(n, -ray.dir, pos, metal, a2, base_color);
     color += alpha * direct_lighting * indirect;
     indirect *= occlusion;
 
@@ -437,13 +460,10 @@ vec3 get_ray_color(Ray ray) {
     } else {
       ++light_bounces;
 
-      mat3 local_transform = orthogonal_matrix(n);
-      vec3 local_point = hemisphere_cosine_sample();
-      vec3 dir = normalize(local_transform * local_point);
-
+      float pdf;
+      vec3 dir = microfacet_sample(n, -ray.dir, a2, pdf);
       float n_dot_l = max(dot(n, dir), 0.0);
-      float pdf = n_dot_l / PI;
-      indirect *= brdf(n, -ray.dir, dir, metallic, roughness, base_color) * n_dot_l / pdf;
+      indirect *= microfacet_brdf(n, -ray.dir, dir, metal, a2, base_color) * n_dot_l / pdf;
 
       ray.origin = pos + NORMAL_DELTA * n;
       ray.dir = dir;
@@ -463,6 +483,7 @@ void main() {
   rand_state = index ^ seed;
 
   vec3 color = vec3(0.0);
+  uint nan_count = 0;
   for (uint i = 0; i < sample_count; ++i) {
     vec3 pixel_center = camera.corner_pixel_pos + 
       (id.x + rand_float() - 0.5) * camera.pixel_delta_u +
@@ -472,9 +493,14 @@ void main() {
     ray.origin = camera.pos;
     ray.dir = normalize(pixel_center - camera.pos);
 
-    color += get_ray_color(ray);
+    vec3 ray_color = get_ray_color(ray);
+    if (isnan(ray_color.x) || isnan(ray_color.y) || isnan(ray_color.z)) {
+      ++nan_count;
+    } else {
+      color += ray_color;
+    }
   }
-  color /= sample_count;
+  color /= (sample_count - nan_count);
 
   color = pow(color, vec3(1.0 / GAMMA));
 
