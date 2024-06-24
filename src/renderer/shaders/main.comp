@@ -16,7 +16,8 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define NORMAL_DELTA 1e-4
 #define POINT_LIGHT_RADIUS 0.2
 #define MAX_TRANSPARENCY_BOUNCES 4
-#define MAX_LIGHT_BOUNCES 4
+#define MAX_LIGHT_BOUNCES 8
+#define CLAMP_CONSTANT 10.0
 const float epsilon = 1e-6;
 
 // <--------------------------------Structs----------------------------------->
@@ -464,11 +465,6 @@ vec3 sample_area_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 bas
   float cos_theta0 = dot(tri_n, -l);
   float pdf = dist2 / (cos_theta0 * area) / emissive_triangle_count;
 
-  // Firefly Fix
-  if (pdf < 1e-2) {
-    return vec3(0.0);
-  }
-
   float n_dot_l = abs(dot(n, l));
   Material mat = materials[mat_idx];
   vec3 emission = mat.emissive_factor * pow(sample_texture(mat.emissive_texture_idx, uv).rgb, vec3(GAMMA));
@@ -552,7 +548,7 @@ vec3 trace(Ray ray) {
 
   color += indirect * bg_color;
 
-  return color;
+  return clamp(color, 0.0, CLAMP_CONSTANT);
 }
 
 // <---------------------------------Main------------------------------------->
