@@ -216,6 +216,48 @@ void ray_triangle_intersect(
   }
 }
 
+// <-----------------------------Utility-------------------------------------->
+
+vec4 sample_texture(uint index, vec2 texcoord) {
+  if (index == -1) return vec4(1.0);
+  return texture(textures[nonuniformEXT(index)], texcoord);
+}
+
+void get_interpolated_data(
+    uint tri_idx, vec3 wuv, 
+    out vec3 pos, out vec3 normal, 
+    out vec2 texcoord, out uint mat_idx) {
+
+  Vertex vertices[3] = triangles[tri_idx];
+  pos = mat3(vertices[0].pos, vertices[1].pos, vertices[2].pos) * wuv;
+  normal = normalize(mat3(vertices[0].normal, vertices[1].normal, vertices[2].normal) * wuv);
+  texcoord = mat3x2(
+    vec2(vertices[0].uv_u, vertices[0].uv_v),
+    vec2(vertices[1].uv_u, vertices[1].uv_v),
+    vec2(vertices[2].uv_u, vertices[2].uv_v)
+  ) * wuv;
+  mat_idx = vertices[0].mat_idx;
+}
+
+void get_material_data(uint mat_idx, vec2 texcoord,
+    out vec3 base_color, out float alpha, out float metallic,
+    out float roughness, out vec3 emission, out float occlusion) {
+
+  Material mat = materials[mat_idx];
+
+  vec4 base_color_srgb = sample_texture(mat.base_color_texture_idx, texcoord);
+  base_color = mat.base_color.rgb * pow(base_color_srgb.rgb, vec3(GAMMA));
+  alpha = mat.base_color.a * base_color_srgb.a;
+
+  vec2 roughness_metallic = sample_texture(mat.metallic_roughness_texture_idx, texcoord).bg;
+  metallic = mat.metallic * roughness_metallic[0];
+  roughness = mat.roughness * roughness_metallic[1];
+
+  emission = mat.emissive_factor * pow(sample_texture(mat.emissive_texture_idx, texcoord).rgb, vec3(GAMMA));
+
+  occlusion = 1.0 + mat.occlusion_strength * (sample_texture(mat.occlusion_texture_idx, texcoord).r - 1.0);
+}
+
 // <-------------------------Ray-Scene-Intersection--------------------------->
 
 #define MIN_STACK_SIZE 64
@@ -259,48 +301,6 @@ void ray_scene_intersect(const Ray ray, inout IntersectInfo info) {
       }
     }
   }
-}
-
-// <-----------------------------Utility-------------------------------------->
-
-vec4 sample_texture(uint index, vec2 texcoord) {
-  if (index == -1) return vec4(1.0);
-  return texture(textures[nonuniformEXT(index)], texcoord);
-}
-
-void get_interpolated_data(
-    uint tri_idx, vec3 wuv, 
-    out vec3 pos, out vec3 normal, 
-    out vec2 texcoord, out uint mat_idx) {
-
-  Vertex vertices[3] = triangles[tri_idx];
-  pos = mat3(vertices[0].pos, vertices[1].pos, vertices[2].pos) * wuv;
-  normal = normalize(mat3(vertices[0].normal, vertices[1].normal, vertices[2].normal) * wuv);
-  texcoord = mat3x2(
-    vec2(vertices[0].uv_u, vertices[0].uv_v),
-    vec2(vertices[1].uv_u, vertices[1].uv_v),
-    vec2(vertices[2].uv_u, vertices[2].uv_v)
-  ) * wuv;
-  mat_idx = vertices[0].mat_idx;
-}
-
-void get_material_data(uint mat_idx, vec2 texcoord,
-    out vec3 base_color, out float alpha, out float metallic,
-    out float roughness, out vec3 emission, out float occlusion) {
-
-  Material mat = materials[mat_idx];
-
-  vec4 base_color_srgb = sample_texture(mat.base_color_texture_idx, texcoord);
-  base_color = mat.base_color.rgb * pow(base_color_srgb.rgb, vec3(GAMMA));
-  alpha = mat.base_color.a * base_color_srgb.a;
-
-  vec2 roughness_metallic = sample_texture(mat.metallic_roughness_texture_idx, texcoord).bg;
-  metallic = mat.metallic * roughness_metallic[0];
-  roughness = mat.roughness * roughness_metallic[1];
-
-  emission = mat.emissive_factor * pow(sample_texture(mat.emissive_texture_idx, texcoord).rgb, vec3(GAMMA));
-
-  occlusion = 1.0 + mat.occlusion_strength * (sample_texture(mat.occlusion_texture_idx, texcoord).r - 1.0);
 }
 
 // <--------------------------------BRDF-------------------------------------->
