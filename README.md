@@ -2,6 +2,15 @@
 
 A pathtracer created using C++ and Vulkan.
 
+## Features
+
+- Unidirectional path tracing with multiple importance sampling
+- Supports directional, point and area lights
+- Supports textures and PBR materials
+- Uses Vulkan compute shaders for GPU acceleration
+- Uses binned BVH with surface area heuristics
+- Cross platform: Windows and Linux
+
 ## Building
 
 ### Requirements
