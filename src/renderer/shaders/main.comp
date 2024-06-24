@@ -381,13 +381,9 @@ vec3 microfacet_sample(vec3 n, vec3 v, float a2, out float pdf) {
 vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 base_color) {
   vec3 color = vec3(0.0);
 
-  // Broken
   for (uint i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) {
     DirectionalLight light = directional_lights[i];
     vec3 l = -light.dir;
-
-    float n_dot_l = max(dot(n, l), 0.0);
-    if (n_dot_l == 0.0) continue;
 
     IntersectInfo info;
     info.t = INFINITY;
@@ -398,9 +394,8 @@ vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3
     ray_scene_intersect(ray, info);
     if (info.tri_idx != -1) continue;
 
-    light.intensity *= (4.0 * PI / 683.0);
+    float n_dot_l = max(dot(n, l), 0.0);
     vec3 radiance = light.color * light.intensity;
-
     color += radiance * microfacet_brdf(n, v, l, metal, a2, base_color) * n_dot_l;
   }
 
@@ -420,7 +415,8 @@ vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3
     ray.origin = pos + NORMAL_DELTA * n;
     ray.dir = l;
     ray_scene_intersect(ray, info);
-    if (info.tri_idx != -1 && info.t * info.t < dist2) continue;
+    float correction = NORMAL_DELTA / dot(l, n);
+    if (info.tri_idx != -1 && info.t + correction < distance(pos, sample_pos)) continue;
 
     const float light_area = 4.0 * PI * POINT_LIGHT_RADIUS * POINT_LIGHT_RADIUS;
     vec3 radiance = light.color * light.intensity / light_area / (4.0 * PI);
@@ -437,6 +433,8 @@ vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3
 // <------------------------Area-Light-Sampling------------------------------->
 
 vec3 sample_area_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 base_color) {
+  if (emissive_triangle_count < 1) return vec3(0.0);
+
   uint tri_idx = emissive_triangles[uint(rand_float() * emissive_triangle_count)];
   vec3 tri_pos, tri_n;
   vec2 uv;
@@ -456,8 +454,8 @@ vec3 sample_area_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 bas
   ray.origin = pos + NORMAL_DELTA * n;
   ray.dir = l;
   ray_scene_intersect(ray, info);
-  float epsilon = NORMAL_DELTA / dot(l, n);
-  if (info.tri_idx != -1 && info.t + epsilon < distance(pos, tri_pos)) return vec3(0.0);
+  float correction = NORMAL_DELTA / dot(l, n);
+  if (info.tri_idx != -1 && info.t + correction < distance(pos, tri_pos)) return vec3(0.0);
 
   vec3 v_pos[3] = positions[tri_idx];
   float area = length(cross(v_pos[1] - v_pos[0], v_pos[2] - v_pos[0])) / 2.0;
