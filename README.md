@@ -1,6 +1,6 @@
 # Pathtracer
 
-A pathtracer created using C++ and Vulkan.
+A pathtracer made using C++ and Vulkan.
 
 ## Features
 
@@ -10,7 +10,7 @@ A pathtracer created using C++ and Vulkan.
 - Uses Vulkan compute shaders for GPU acceleration
 - Uses binned BVH with surface area heuristics
 - Cross platform: Windows and Linux
-- Cross GPU Vendor: AMD and Nvidia
+- Cross GPU Vendor: Nvidia and AMD
 
 ## Building
 
@@ -19,6 +19,7 @@ A pathtracer created using C++ and Vulkan.
 - C++ compiler with C++20 support
 - CMake
 - Vulkan SDK
+- [glslc](https://github.com/google/shaderc.git) executable in PATH
 
 ### Commands
 
