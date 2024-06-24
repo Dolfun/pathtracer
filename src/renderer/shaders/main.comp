@@ -460,8 +460,24 @@ vec3 get_ray_color(Ray ray) {
     } else {
       ++light_bounces;
 
-      float pdf;
-      vec3 dir = microfacet_sample(n, -ray.dir, a2, pdf);
+      float diffuse_pdf;
+      vec3 diffuse_dir = diffuse_sample(n, diffuse_pdf);
+
+      float microfacet_pdf;
+      vec3 microfacet_dir = microfacet_sample(n, -ray.dir, a2, microfacet_pdf);
+
+      vec3 dir;
+      float c;
+      if (rand_float() < metal) {
+        dir = microfacet_dir;
+        c = metal;
+      } else {
+        dir = diffuse_dir;
+        c = 1.0 - metal;
+      }
+
+      float pdf = c * (diffuse_pdf + microfacet_pdf);
+
       float n_dot_l = max(dot(n, dir), 0.0);
       indirect *= microfacet_brdf(n, -ray.dir, dir, metal, a2, base_color) * n_dot_l / pdf;
 
