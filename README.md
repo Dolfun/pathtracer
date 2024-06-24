@@ -60,18 +60,26 @@ Set device_id to -1 to auto-select device.
 
 ## Samples
 
-### Suzanne
+### Diffuse
 
-![suzanne](https://i.imgur.com/PS4tmhG.png)
+![diffuse](https://i.imgur.com/VqUf08Q.png)
+
+### Metal
+
+![metal](https://i.imgur.com/FOu7iwf.png)
+
+### Reflection
+
+![reflection](https://i.imgur.com/jYzjRD5.png)
 
 ### Cornell Box
 
-![cornell box](https://i.imgur.com/SCCgPDY.png)
-
-### [Forest House](https://sketchfab.com/3d-models/forest-house-52429e4ef7bf4deda1309364a2cda86f)
-
-![forest house](https://i.imgur.com/DW66g5C.png)
+![cornell box](https://i.imgur.com/wmEt1h2.png)
 
 ### [Western Pacific](https://sketchfab.com/3d-models/emd-gp7-western-pacific-713-1c89cb9f2c224b78b6fea50f82e042c3)
 
-![western pacific](https://i.imgur.com/5VnCCIY.png)
+![western pacific](https://i.imgur.com/k8zUboP.png)
+
+### [Forest House](https://sketchfab.com/3d-models/forest-house-52429e4ef7bf4deda1309364a2cda86f)
+
+![forest house](https://i.imgur.com/ZGMxMi4.png)
