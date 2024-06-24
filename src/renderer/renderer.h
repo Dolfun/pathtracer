@@ -32,6 +32,7 @@ private:
   void create_instance();
   void select_physical_device(const std::uint32_t);
   void select_queue_family_indices();
+  void check_extensions_support() const;
   void create_logical_device();
 
   vk::raii::Context context;

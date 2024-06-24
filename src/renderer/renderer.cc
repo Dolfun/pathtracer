@@ -8,6 +8,7 @@ Renderer::Renderer(const std::uint32_t device_id) {
   create_instance();
   select_physical_device(device_id);
   select_queue_family_indices();
+  check_extensions_support();
   create_logical_device();
 }
 
@@ -83,6 +84,30 @@ void Renderer::select_queue_family_indices() {
 
   if (!compute_family_index.has_value()) {
     throw std::runtime_error("Failed to find a compute queue.");
+  }
+}
+
+void Renderer::check_extensions_support() const {
+  auto features = physical_device->getFeatures2<
+    vk::PhysicalDeviceFeatures2,
+    vk::PhysicalDeviceSynchronization2Features,
+    vk::PhysicalDeviceMaintenance4Features,
+    vk::PhysicalDeviceDescriptorIndexingFeatures>();
+
+  if (!features.get<vk::PhysicalDeviceSynchronization2Features>().synchronization2) {
+    throw std::runtime_error("Synchronization2 is not supported!");
+  }
+
+  if (!features.get<vk::PhysicalDeviceMaintenance4Features>().maintenance4) {
+    throw std::runtime_error("Maintenance4 is not supported!");
+  }
+
+  if (!features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().shaderSampledImageArrayNonUniformIndexing) {
+    throw std::runtime_error("shaderSampledImageArrayNonUniformIndexing is not supported!");
+  }
+
+  if (!features.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().runtimeDescriptorArray) {
+    throw std::runtime_error("runtimeDescriptorArray is not supported!");
   }
 }
 
