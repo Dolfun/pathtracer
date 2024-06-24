@@ -9,8 +9,8 @@ A pathtracer made using C++ and Vulkan.
 - Supports textures and PBR materials
 - Uses Vulkan compute shaders for GPU acceleration
 - Uses binned BVH with surface area heuristics
-- Cross platform: Windows and Linux
-- Cross GPU Vendor: Nvidia and AMD
+- Cross platform support: Windows and Linux
+- Cross GPU Vendor support: Nvidia and AMD
 
 ## Building
 
