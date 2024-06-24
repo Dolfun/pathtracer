@@ -101,7 +101,6 @@ private:
   void process_image(tinygltf::Image&);
   void process_sampler(const tinygltf::Sampler&);
   void process_texture(const tinygltf::Texture&);
-  void process_camera();
 
   template <typename T>
   auto get_attribute_accessor(const tinygltf::Primitive&, const std::string&) const
@@ -109,10 +108,9 @@ private:
 
   template <typename T>
   void process_indices(const AccessorHelper<T>&);
-
   void process_primitive(const tinygltf::Primitive&, const glm::mat4&);
-
   void process_light(const tinygltf::Light&, const glm::mat4&);
+  void process_camera();
 
   Scene& scene;
   tinygltf::Model model;
@@ -173,7 +171,6 @@ void Loader::process() {
   for (const auto& texture : model.textures) {
     process_texture(texture);
   }
-
   if (scene.textures.empty()) {
     scene.textures.emplace_back();
   }
@@ -377,7 +374,7 @@ void Loader::process_indices(const AccessorHelper<T>& indices) {
       index_offset + indices[i + 1],
       index_offset + indices[i + 2],
     };
-    scene.triangle_indices.push_back(vertex_indices);
+    scene.triangles.push_back(vertex_indices);
   }
 }
 

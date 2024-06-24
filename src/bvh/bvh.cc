@@ -15,7 +15,7 @@ struct Bin {
 class BVHBuilder {
 public:
   BVHBuilder(Scene& scene, std::vector<BVHNode>& _nodes, std::uint32_t _bin_count)
-    : vertices { scene.vertices }, triangle_indices { scene.triangle_indices }, 
+    : vertices { scene.vertices }, triangles { scene.triangles }, 
       nodes { _nodes }, node_count { 2 }, bin_count { _bin_count } {}
 
   std::uint32_t build();
@@ -26,7 +26,7 @@ public:
 
 private:
   const std::vector<Vertex>& vertices;
-  std::vector<VertexIndices>& triangle_indices;
+  std::vector<VertexIndices>& triangles;
   std::vector<BVHNode>& nodes;
   std::uint32_t node_count;
   std::uint32_t bin_count;
@@ -34,7 +34,7 @@ private:
 };
 
 std::uint32_t BVHBuilder::build() {
-  auto triangle_count = static_cast<std::uint32_t>(triangle_indices.size());
+  auto triangle_count = static_cast<std::uint32_t>(triangles.size());
   nodes.resize(2 * triangle_count);
 
   BVHNode& root = nodes[0];
@@ -58,14 +58,14 @@ void BVHBuilder::subdivide(BVHNode& node, std::uint32_t depth) {
   float nosplit_cost = node.aabb.area() * node.triangle_count;
   if (split_cost >= nosplit_cost) return;
 
-  auto begin_it = triangle_indices.begin() + node.begin_index;
+  auto begin_it = triangles.begin() + node.begin_index;
   auto end_it   = begin_it + node.triangle_count;
   auto pred = [&] (const VertexIndices& indices) {
     return centroid(indices)[split_axis] < split_pos;
   };
   auto it = std::partition(begin_it, end_it, pred);
   
-  auto i = static_cast<std::uint32_t>(it - triangle_indices.begin());
+  auto i = static_cast<std::uint32_t>(it - triangles.begin());
   std::uint32_t left_count = i - node.begin_index;
   if (left_count == 0 || left_count == node.triangle_count) {
     return;
@@ -89,7 +89,7 @@ void BVHBuilder::subdivide(BVHNode& node, std::uint32_t depth) {
 
 void BVHBuilder::update_bounds(BVHNode& node) const {
   for (std::uint32_t i = 0; i < node.triangle_count; ++i) {
-    node.aabb.expand(vertices, triangle_indices[node.begin_index + i]);
+    node.aabb.expand(vertices, triangles[node.begin_index + i]);
   }
 }
 
@@ -101,7 +101,7 @@ auto BVHBuilder::find_split(BVHNode& node) const -> std::tuple<std::uint32_t, fl
   glm::vec3 bound_min {  std::numeric_limits<float>::infinity() };
   glm::vec3 bound_max { -std::numeric_limits<float>::infinity() };
   for (std::uint32_t i = 0; i < node.triangle_count; ++i) {
-    glm::vec3 v = centroid(triangle_indices[node.begin_index + i]);
+    glm::vec3 v = centroid(triangles[node.begin_index + i]);
     bound_min = glm::min(bound_min, v);
     bound_max = glm::max(bound_max, v);
   }
@@ -110,7 +110,7 @@ auto BVHBuilder::find_split(BVHNode& node) const -> std::tuple<std::uint32_t, fl
     std::vector<Bin> bins(bin_count);
     float scale = static_cast<float>(bin_count) / (bound_max[axis] - bound_min[axis]);
     for (std::uint32_t i = 0; i < node.triangle_count; ++i) {
-      const auto& vertex_indices = triangle_indices[node.begin_index + i];
+      const auto& vertex_indices = triangles[node.begin_index + i];
       std::uint32_t index = std::min(
         bin_count - 1,
         static_cast<std::uint32_t>((centroid(vertex_indices)[axis] - bound_min[axis]) * scale)

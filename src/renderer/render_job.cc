@@ -33,6 +33,7 @@ RenderJob::RenderJob(const Renderer& _renderer, const RenderConfig& _config, Sce
   set_scene_data_storage_buffer_info<0>(vertex_positions);
   set_scene_data_storage_buffer_info<1>(packed_vertex_data);
   set_scene_data_storage_buffer_info<2>(packed_bvh_nodes);
+  set_scene_data_storage_buffer_info<3>(scene.emissive_triangle_indices);
   
   set_uniform_buffer_info<0>(scene.materials);
   set_uniform_buffer_info<1>(scene.directional_lights);
@@ -73,10 +74,10 @@ void RenderJob::initialize_work_group_size() {
 }
 
 void RenderJob::process_scene() {
-  std::size_t vertex_count = scene.triangle_indices.size() * 3;
+  std::size_t vertex_count = scene.triangles.size() * 3;
   vertex_positions.reserve(vertex_count);
   packed_vertex_data.reserve(vertex_count);
-  for (const auto& vertex_indices : scene.triangle_indices) {
+  for (const auto& vertex_indices : scene.triangles) {
     for (auto i : vertex_indices) {
       const auto& vertex = scene.vertices[i];
 
@@ -92,6 +93,14 @@ void RenderJob::process_scene() {
         .material_index = vertex.material_index
       };
       packed_vertex_data.push_back(vertex_data);
+    }
+  }
+
+  for (std::size_t i = 0; i < scene.triangles.size(); ++i) {
+    std::uint32_t vertex_index = scene.triangles[i][0];
+    const auto& material = scene.materials[scene.vertices[vertex_index].material_index];
+    if (material.emissive_factor != glm::vec3(0.0f) || material.emissive_texture_index != -1) {
+      scene.emissive_triangle_indices.push_back(i);
     }
   }
 
@@ -826,7 +835,8 @@ auto RenderJob::render() const -> std::pair<const unsigned char*, std::size_t> {
 
 PushConstants::PushConstants(const RenderConfig& config, const Scene& scene) :
     resolution_x { config.resolution_x }, resolution_y { config.resolution_y },
-    sample_count { config.sample_count }, bg_color { config.bg_color } {
+    sample_count { config.sample_count }, bg_color { config.bg_color },
+    emissive_triangle_count { static_cast<std::uint32_t>(scene.emissive_triangle_indices.size()) } {
 
   static std::random_device rd;
   static std::mt19937 engine { rd() };

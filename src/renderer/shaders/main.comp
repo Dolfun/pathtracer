@@ -1,5 +1,7 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
+// #extension GL_EXT_debug_printf : enable
+
 // <----------------------Specialization Constants---------------------------->
 
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
@@ -11,7 +13,7 @@ layout (constant_id = 5) const uint BVH_MAX_DEPTH = 16;
 #define PI 3.1415926535
 #define GAMMA 2.2
 #define INFINITY 3.4e+38
-#define NORMAL_DELTA 1e-3
+#define NORMAL_DELTA 1e-4
 #define POINT_LIGHT_RADIUS 0.2
 #define MAX_TRANSPARENCY_BOUNCES 4
 #define MAX_LIGHT_BOUNCES 4
@@ -26,7 +28,7 @@ struct Vertex {
   vec3 tangent;
   float uv_v;
   vec3 bitangent;
-  uint material_idx;
+  uint mat_idx;
 };
 
 struct BVHNode {
@@ -80,7 +82,7 @@ struct Ray {
 struct IntersectInfo {
   float t;
   float u, v;
-  uint triangle_idx;
+  uint tri_idx;
 };
 
 // <------------------------------Descriptors--------------------------------->
@@ -97,21 +99,25 @@ layout (set = 0, binding = 2) readonly buffer bvh_SSBO {
   BVHNode bvh_nodes[];
 };
 
-layout (set = 0, binding = 3) uniform material_UBO {
+layout (set = 0, binding = 3) readonly buffer emissive_triangles_SSBO {
+  uint emissive_triangles[];
+};
+
+layout (set = 0, binding = 4) uniform material_UBO {
   Material materials[MATERIAL_COUNT];
 };
 
-layout (set = 0, binding = 4) uniform directional_light_UBO {
+layout (set = 0, binding = 5) uniform directional_light_UBO {
   DirectionalLight directional_lights[DIRECTIONAL_LIGHT_COUNT + 1];
 };
 
-layout (set = 0, binding = 5) uniform point_light_UBO {
+layout (set = 0, binding = 6) uniform point_light_UBO {
   PointLight point_lights[POINT_LIGHT_COUNT + 1];
 };
 
-layout (set = 0, binding = 6) uniform sampler2D textures[];
+layout (set = 0, binding = 7) uniform sampler2D textures[];
 
-layout (set = 0, binding = 7, rgba8) uniform writeonly image2D result;
+layout (set = 0, binding = 8, rgba8) uniform writeonly image2D result;
 
 layout (push_constant) uniform constant {
   Viewport viewport;
@@ -119,6 +125,7 @@ layout (push_constant) uniform constant {
   uint seed;
   uint sample_count;
   vec3 bg_color_srgb;
+  uint emissive_triangle_count;
 };
 
 // <----------------------------------RNG------------------------------------->
@@ -147,6 +154,15 @@ mat3 orthogonal_matrix(vec3 w) {
   return mat3(u, v, w);
 }
 
+vec3 sample_triangle() {
+  float u = rand_float(), v = rand_float();
+  if (u + v > 1.0) {
+    u = 1.0 - u;
+    v = 1.0 - v;
+  }
+  return vec3(1.0 - u - v, u, v);
+}
+
 // <-------------------------Ray-AABB-Intersection---------------------------->
 
 bool ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max, out float t) {
@@ -171,10 +187,10 @@ bool ray_aabb_intersect(const Ray ray, const vec3 aabb_min, const vec3 aabb_max,
 
 void ray_triangle_intersect(
     const Ray ray,
-    const uint triangle_idx,
+    const uint tri_idx,
     inout IntersectInfo info) {
 
-  vec3 pos[3] = positions[triangle_idx];
+  vec3 pos[3] = positions[tri_idx];
   vec3 edge1 = pos[1] - pos[0];
   vec3 edge2 = pos[2] - pos[0];
   vec3 ray_cross_edge2 = cross(ray.dir, edge2);
@@ -195,7 +211,7 @@ void ray_triangle_intersect(
     info.t = t;
     info.u = u;
     info.v = v;
-    info.triangle_idx = triangle_idx;
+    info.tri_idx = tri_idx;
   }
 }
 
@@ -251,28 +267,28 @@ vec4 sample_texture(uint index, vec2 texcoord) {
   return texture(textures[nonuniformEXT(index)], texcoord);
 }
 
-void get_interpolated_data(IntersectInfo intersect_info, 
-    out vec3 pos, out vec3 normal, out vec2 texcoord, out uint material_idx) {
-  Vertex vertices[3] = triangles[intersect_info.triangle_idx];
-  float u = intersect_info.u;
-  float v = intersect_info.v;
-  float w = 1.0 - u - v;
+void get_interpolated_data(
+    uint tri_idx, vec3 wuv, 
+    out vec3 pos, out vec3 normal, 
+    out vec2 texcoord, out uint mat_idx) {
 
-  pos = w * vertices[0].pos + u * vertices[1].pos + v * vertices[2].pos;
-  normal = normalize(w * vertices[0].normal + u * vertices[1].normal + v * vertices[2].normal);
-  texcoord = 
-    w * vec2(vertices[0].uv_u, vertices[0].uv_v) +
-    u * vec2(vertices[1].uv_u, vertices[1].uv_v) +
-    v * vec2(vertices[2].uv_u, vertices[2].uv_v);
-  material_idx = vertices[0].material_idx;
+  Vertex vertices[3] = triangles[tri_idx];
+  pos = mat3(vertices[0].pos, vertices[1].pos, vertices[2].pos) * wuv;
+  normal = normalize(mat3(vertices[0].normal, vertices[1].normal, vertices[2].normal) * wuv);
+  texcoord = mat3x2(
+    vec2(vertices[0].uv_u, vertices[0].uv_v),
+    vec2(vertices[1].uv_u, vertices[1].uv_v),
+    vec2(vertices[2].uv_u, vertices[2].uv_v)
+  ) * wuv;
+  mat_idx = vertices[0].mat_idx;
 }
 
-void get_material_data(uint material_idx, vec2 texcoord,
+void get_material_data(uint mat_idx, vec2 texcoord,
     out vec3 base_color, out float alpha, out float metallic,
     out float roughness, out vec3 emission, out float occlusion) {
 
-  Material mat = materials[material_idx];
-  
+  Material mat = materials[mat_idx];
+
   vec4 base_color_srgb = sample_texture(mat.base_color_texture_idx, texcoord);
   base_color = mat.base_color.rgb * pow(base_color_srgb.rgb, vec3(GAMMA));
   alpha = mat.base_color.a * base_color_srgb.a;
@@ -358,11 +374,13 @@ vec3 microfacet_sample(vec3 n, vec3 v, float a2, out float pdf) {
 
   return l;
 }
-// <--------------------------Direct-Lighting--------------------------------->
+
+// <-------------------Punctual-Lighting-Sampling----------------------------->
 
 vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 base_color) {
   vec3 color = vec3(0.0);
 
+  // Broken
   for (uint i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) {
     DirectionalLight light = directional_lights[i];
     vec3 l = -light.dir;
@@ -372,12 +390,12 @@ vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3
 
     IntersectInfo info;
     info.t = INFINITY;
-    info.triangle_idx = -1;
+    info.tri_idx = -1;
     Ray ray;
     ray.origin = pos + NORMAL_DELTA * n;
     ray.dir = l;
     ray_scene_intersect(ray, info);
-    if (info.triangle_idx != -1) continue;
+    if (info.tri_idx != -1) continue;
 
     light.intensity *= (4.0 * PI / 683.0);
     vec3 radiance = light.color * light.intensity;
@@ -394,30 +412,72 @@ vec3 sample_punctual_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3
     float dist2 = dot(l, l);
     l = normalize(l);
 
-    float n_dot_l = max(dot(n, l), 0.0);
-    if (n_dot_l == 0.0) continue;
-
     IntersectInfo info;
     info.t = INFINITY;
-    info.triangle_idx = -1;
+    info.tri_idx = -1;
     Ray ray;
     ray.origin = pos + NORMAL_DELTA * n;
     ray.dir = l;
     ray_scene_intersect(ray, info);
-    if (info.triangle_idx != -1 && info.t * info.t < dist2) continue;
+    if (info.tri_idx != -1 && info.t * info.t < dist2) continue;
 
     const float light_area = 4.0 * PI * POINT_LIGHT_RADIUS * POINT_LIGHT_RADIUS;
-    float pdf = dist2 / (n_dot_l * light_area);
     vec3 radiance = light.color * light.intensity / light_area / (4.0 * PI);
+
+    float cos_theta0 = dot(sample_dir, -l);
+    float pdf = dist2 / (cos_theta0 * light_area);
+    float n_dot_l = abs(dot(n, l));
     color += radiance * microfacet_brdf(n, v, l, metal, a2, base_color) * n_dot_l / pdf;
   }
 
   return color;
 }
 
+// <------------------------Area-Light-Sampling------------------------------->
+
+vec3 sample_area_light(vec3 n, vec3 v, vec3 pos, float metal, float a2, vec3 base_color) {
+  uint tri_idx = emissive_triangles[uint(rand_float() * emissive_triangle_count)];
+  vec3 tri_pos, tri_n;
+  vec2 uv;
+  uint mat_idx;
+  vec3 wuv = sample_triangle();
+  get_interpolated_data(tri_idx, wuv, tri_pos, tri_n, uv, mat_idx);
+
+  vec3 l = tri_pos - pos;
+  float dist2 = dot(l, l);
+  l = normalize(l);
+  if (dot(l, tri_n) > 0.0) tri_n *= -1.0;
+
+  IntersectInfo info;
+  info.t = INFINITY;
+  info.tri_idx = -1;
+  Ray ray;
+  ray.origin = pos + NORMAL_DELTA * n;
+  ray.dir = l;
+  ray_scene_intersect(ray, info);
+  float epsilon = NORMAL_DELTA / dot(l, n);
+  if (info.tri_idx != -1 && info.t + epsilon < distance(pos, tri_pos)) return vec3(0.0);
+
+  vec3 v_pos[3] = positions[tri_idx];
+  float area = length(cross(v_pos[1] - v_pos[0], v_pos[2] - v_pos[0])) / 2.0;
+
+  float cos_theta0 = dot(tri_n, -l);
+  float pdf = dist2 / (cos_theta0 * area) / emissive_triangle_count;
+
+  // Firefly Fix
+  if (pdf < 1e-2) {
+    return vec3(0.0);
+  }
+
+  float n_dot_l = abs(dot(n, l));
+  Material mat = materials[mat_idx];
+  vec3 emission = mat.emissive_factor * pow(sample_texture(mat.emissive_texture_idx, uv).rgb, vec3(GAMMA));
+  return emission * microfacet_brdf(n, v, l, metal, a2, base_color) * n_dot_l / pdf;
+}
+
 // <-----------------------------Path-Tracing--------------------------------->
 
-vec3 get_ray_color(Ray ray) {
+vec3 trace(Ray ray) {
   const vec3 bg_color = pow(bg_color_srgb, vec3(GAMMA));
   vec3 color = vec3(0.0);
   vec3 indirect = vec3(1.0);
@@ -425,19 +485,17 @@ vec3 get_ray_color(Ray ray) {
   uint transparency_bounces = 0;
   uint light_bounces = 0;
   while (light_bounces < MAX_LIGHT_BOUNCES) {
-    IntersectInfo intersect_info;
-    intersect_info.t = INFINITY;
-    intersect_info.triangle_idx = -1;
-    ray_scene_intersect(ray, intersect_info);
-    if (intersect_info.triangle_idx == -1) {
-      color += indirect * bg_color;
-      break;
-    }
+    IntersectInfo info;
+    info.t = INFINITY;
+    info.tri_idx = -1;
+    ray_scene_intersect(ray, info);
+    if (info.tri_idx == -1) break;
 
     vec3 pos, n;
     vec2 uv;
     uint mat_idx;
-    get_interpolated_data(intersect_info, pos, n, uv, mat_idx);
+    vec3 wuv = vec3(1.0 - info.u - info.v, info.u, info.v);
+    get_interpolated_data(info.tri_idx, wuv, pos, n, uv, mat_idx);
     if (dot(n, ray.dir) > 0.0) n *= -1.0;
 
     vec3 base_color, emission;
@@ -452,6 +510,7 @@ vec3 get_ray_color(Ray ray) {
 
     vec3 direct_lighting = emission;
     direct_lighting += sample_punctual_light(n, -ray.dir, pos, metal, a2, base_color);
+    direct_lighting += sample_area_light(n, -ray.dir, pos, metal, a2, base_color);
     
     color += alpha * direct_lighting * indirect;
     indirect *= occlusion;
@@ -491,6 +550,8 @@ vec3 get_ray_color(Ray ray) {
     }
   }
 
+  color += indirect * bg_color;
+
   return color;
 }
 
@@ -516,7 +577,7 @@ void main() {
       ray.origin = viewport.camera_pos;
       ray.dir = normalize(pixel_center - viewport.camera_pos);
 
-      vec3 ray_color = get_ray_color(ray);
+      vec3 ray_color = trace(ray);
       if (isnan(ray_color.x) || isnan(ray_color.y) || isnan(ray_color.z)) {
         ++nan_count;
       } else {

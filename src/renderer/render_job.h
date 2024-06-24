@@ -34,6 +34,7 @@ struct PushConstants {
   std::uint32_t sample_count;
 
   glm::vec3 bg_color;
+  std::uint32_t emissive_triangle_count;
 };
 
 struct BufferInfo {
@@ -120,7 +121,7 @@ private:
   std::uint32_t local_size_x, local_size_y;
   std::uint32_t bvh_max_depth;
 
-  static constexpr std::uint32_t scene_data_storage_buffer_count = 3;
+  static constexpr std::uint32_t scene_data_storage_buffer_count = 4;
   std::array<BufferInfo, scene_data_storage_buffer_count> scene_data_storage_buffer_infos;
 
   static constexpr std::uint32_t uniform_buffer_count = 3;

@@ -73,12 +73,13 @@ struct Scene {
   };
   
   std::vector<Vertex> vertices;
-  std::vector<VertexIndices> triangle_indices;
+  std::vector<VertexIndices> triangles;
   std::vector<Material> materials;
   std::vector<Image> images;
   std::vector<Sampler> samplers;
   std::vector<Texture> textures;
   std::vector<DirectionalLight> directional_lights;
   std::vector<PointLight> point_lights;
+  std::vector<std::uint32_t> emissive_triangle_indices;
   Camera camera;
 };
